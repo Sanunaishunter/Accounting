@@ -1,12 +1,120 @@
 """報表頁面 - 統計報表與匯出"""
+import json
 import re
-import streamlit as st
+from itertools import groupby
+from pathlib import Path
+
 import pandas as pd
+import streamlit as st
 from datetime import datetime
 
 import database as db
 
 MEMO_AMOUNT_RE = re.compile(r'[+＋$＄]\s*[$＄]?\s*(\d+(?:\.\d+)?)')
+
+# ===== 對帳輔助 =====
+
+_HISTORY_DIR = Path(__file__).parent.parent / "History"
+_RAW_DATE_RE = re.compile(r'^(\d{1,2})/(\d{1,2})[（(]')
+_CAT_LINE_RE = re.compile(r'^([^：:]+)[：:](.+)$')
+_ITEM_AMT_RE = re.compile(r'[+＋](\d+)')
+_KNOWN_CATS = {"早餐", "中餐", "晚餐", "牛奶", "點心", "飲料", "文具", "電費"}
+
+
+def _find_history_file(year: int, month: int) -> Path | None:
+    candidate = _HISTORY_DIR / f"…{year}{month:02d}.txt"
+    if candidate.exists():
+        return candidate
+    for f in _HISTORY_DIR.glob("*.txt"):
+        if f"{year}{month:02d}" in f.name:
+            return f
+    return None
+
+
+def _parse_history(year: int, month: int, persons: list[str]) -> dict:
+    """Parse raw history file → {person: [{date, category, item_text, amount_str, key}]}"""
+    path = _find_history_file(year, month)
+    if not path:
+        return {}
+
+    result: dict[str, list] = {p: [] for p in persons}
+    current_date = ""
+
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        m = _RAW_DATE_RE.match(line)
+        if m:
+            current_date = f"{year}-{int(m.group(1)):02d}-{int(m.group(2)):02d}"
+            continue
+
+        if not current_date or "⚠" in line:
+            continue
+
+        cat_m = _CAT_LINE_RE.match(line)
+        if not cat_m:
+            continue
+
+        cat_raw = cat_m.group(1).strip()
+        content = cat_m.group(2).strip()
+
+        if not content or content == "無":
+            continue
+
+        cat = "牛奶" if cat_raw.startswith("牛奶") else cat_raw
+        if cat not in _KNOWN_CATS:
+            continue
+
+        for item in re.split(r"[、,，]", content):
+            item = item.strip()
+            if not item or item == "無":
+                continue
+            # remove *N quantity suffix for person matching
+            item_for_match = re.sub(r"\*\d+\.?\d*$", "", item).strip()
+            matched = next(
+                (p for p in sorted(persons, key=len, reverse=True) if item_for_match.startswith(p)),
+                None,
+            )
+            if matched and matched in result:
+                amt_m = _ITEM_AMT_RE.search(item)
+                amount_str = f"+{amt_m.group(1)}" if amt_m else ""
+                ikey = f"{current_date}|{cat}|{item}"
+                result[matched].append({
+                    "date": current_date,
+                    "category": cat,
+                    "item_text": item,
+                    "amount_str": amount_str,
+                    "raw_line": line,
+                    "key": ikey,
+                })
+
+    return result
+
+
+def _recon_path(year: int, month: int) -> Path:
+    return _HISTORY_DIR / f"reconcile_{year}{month:02d}.json"
+
+
+def _load_recon(year: int, month: int) -> dict:
+    p = _recon_path(year, month)
+    if p.exists():
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
+
+
+def _save_recon_item(year: int, month: int, person: str, ikey: str, cb_key: str) -> None:
+    rkey = f"recon_{year}_{month}"
+    state = st.session_state.get(rkey, {})
+    state.setdefault(person, {})[ikey] = st.session_state[cb_key]
+    st.session_state[rkey] = state
+    _recon_path(year, month).write_text(
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 _REPORT_CSS = """\
   .report { font-family: monospace; font-size: 14px; padding: 1.5rem; background: #1e1e1e; border-radius: 8px; color: #ddd; max-width: 360px; }
@@ -325,6 +433,20 @@ if report_type == "全員月報":
         if not df.empty:
             df["total"] = df["amount"] * df["quantity"]
 
+        # 對帳：解析原始歷史檔（每次選月份只解析一次）
+        _hist_key = f"raw_hist_{year}_{month}"
+        if _hist_key not in st.session_state:
+            st.session_state[_hist_key] = _parse_history(year, month, person_names)
+        raw_hist = st.session_state[_hist_key]
+
+        # 對帳狀態（從 JSON 載入，每月只載一次）
+        _rkey = f"recon_{year}_{month}"
+        if _rkey not in st.session_state:
+            st.session_state[_rkey] = _load_recon(year, month)
+
+        # DB lookup set for fast matching
+        _db_set = {(e["date"], e["category"], e["person"]) for e in expenses}
+
         for person in person_names:
             person_df = df[df["person"] == person] if not df.empty else pd.DataFrame()
             person_memo_list = person_memos_dict.get(person, [])
@@ -373,6 +495,42 @@ if report_type == "全員月報":
                 mime="text/html",
                 key=f"export_card_{person}",
             )
+
+            # ===== 對帳 expander =====
+            person_raw = raw_hist.get(person, [])
+            if person_raw:
+                _pstate = st.session_state[_rkey].get(person, {})
+                _auto_match = sum(1 for it in person_raw if (it["date"], it["category"], person) in _db_set)
+                _confirmed = sum(1 for it in person_raw if _pstate.get(it["key"], False))
+                _total = len(person_raw)
+                _exp_label = (
+                    f"🔍 對帳 {person}　"
+                    f"{'✅' if _auto_match == _total else '⚠️'} "
+                    f"{_auto_match}/{_total} 自動比對　"
+                    f"☑ {_confirmed} 已確認"
+                )
+                with st.expander(_exp_label):
+                    for _date, _items_iter in groupby(person_raw, key=lambda x: x["date"]):
+                        _items = list(_items_iter)
+                        _dp = _date.split("-")
+                        st.caption(f"📅 {int(_dp[1])}/{int(_dp[2])}")
+                        for _it in _items:
+                            _in_db = (_it["date"], _it["category"], person) in _db_set
+                            _auto_icon = "✅" if _in_db else "🔴"
+                            _cat_d = CATEGORY_DISPLAY.get(_it["category"], _it["category"])
+                            _cb_label = f"{_auto_icon} {_cat_d} {_it['amount_str']}　`{_it['item_text']}`"
+                            _cb_key = f"rcb_{person}_{_it['key']}"
+                            if _cb_key not in st.session_state:
+                                st.session_state[_cb_key] = _pstate.get(_it["key"], _in_db)
+                            st.checkbox(
+                                _cb_label,
+                                key=_cb_key,
+                                on_change=_save_recon_item,
+                                args=(year, month, person, _it["key"], _cb_key),
+                            )
+            elif _find_history_file(year, month) is None:
+                with st.expander(f"🔍 對帳 {person}"):
+                    st.warning(f"找不到 History/…{year}{month:02d}.txt")
 
             st.divider()
 
