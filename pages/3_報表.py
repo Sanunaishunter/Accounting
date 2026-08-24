@@ -10,14 +10,14 @@ from datetime import datetime
 
 import database as db
 
-MEMO_AMOUNT_RE = re.compile(r'[+＋$＄]\s*[$＄]?\s*(\d+(?:\.\d+)?)')
+MEMO_AMOUNT_RE = re.compile(r'([+-]?\d+(?:\.\d+)?)\s*$')
 
 # ===== 對帳輔助 =====
 
 _HISTORY_DIR = Path(__file__).parent.parent / "History"
-_RAW_DATE_RE = re.compile(r'^(\d{1,2})/(\d{1,2})[（(]')
+_RAW_DATE_RE = re.compile(r'^(\d{1,2})/(\d{1,2})[（(]?')
 _CAT_LINE_RE = re.compile(r'^([^：:]+)[：:](.+)$')
-_ITEM_AMT_RE = re.compile(r'[+＋](\d+)')
+_ITEM_AMT_RE = re.compile(r'([+-]?\d+(?:\.\d+)?)\s*$')
 _KNOWN_CATS = {"早餐", "中餐", "晚餐", "牛奶", "點心", "飲料", "文具", "電費"}
 
 
@@ -31,11 +31,25 @@ def _find_history_file(year: int, month: int) -> Path | None:
     return None
 
 
+def _dedupe_key(existing_items: list, base_key: str) -> str:
+    """Append #N suffix if base_key already used, so identical same-day items get unique keys."""
+    existing_keys = {it["key"] for it in existing_items}
+    key = base_key
+    n = 1
+    while key in existing_keys:
+        n += 1
+        key = f"{base_key}#{n}"
+    return key
+
+
 def _parse_history(year: int, month: int, persons: list[str]) -> dict:
     """Parse raw history file → {person: [{date, category, item_text, amount_str, key}]}"""
     path = _find_history_file(year, month)
     if not path:
         return {}
+
+    proxy_mapping: dict[str, str] = db.get_person_proxy_mappings()
+    persons_by_len = sorted(persons, key=len, reverse=True)
 
     result: dict[str, list] = {p: [] for p in persons}
     current_date = ""
@@ -50,7 +64,37 @@ def _parse_history(year: int, month: int, persons: list[str]) -> dict:
             current_date = f"{year}-{int(m.group(1)):02d}-{int(m.group(2)):02d}"
             continue
 
-        if not current_date or "⚠" in line:
+        if not current_date:
+            continue
+
+        # ⚠️ 備忘行：不跳過，解析為備忘加項
+        if "⚠" in line:
+            content = line.replace("⚠️", "").replace("⚠", "").strip()
+            if not content:
+                continue
+            # 先用 person_proxy_mapping（跟 parser 相同邏輯）
+            matched = next(
+                (person for kw, person in proxy_mapping.items() if kw in content),
+                None,
+            )
+            # fallback：找第一個出現在 content 的人名
+            if not matched:
+                matched = next(
+                    (p for p in persons_by_len if p in content),
+                    None,
+                )
+            if matched and matched in result:
+                amt_m = _ITEM_AMT_RE.search(content)
+                amount_str = amt_m.group(1) if amt_m else ""
+                ikey = _dedupe_key(result[matched], f"{current_date}|⚠️備忘|{content}")
+                result[matched].append({
+                    "date": current_date,
+                    "category": "⚠️備忘",
+                    "item_text": content,
+                    "amount_str": amount_str,
+                    "raw_line": line,
+                    "key": ikey,
+                })
             continue
 
         cat_m = _CAT_LINE_RE.match(line)
@@ -80,7 +124,7 @@ def _parse_history(year: int, month: int, persons: list[str]) -> dict:
             if matched and matched in result:
                 amt_m = _ITEM_AMT_RE.search(item)
                 amount_str = f"+{amt_m.group(1)}" if amt_m else ""
-                ikey = f"{current_date}|{cat}|{item}"
+                ikey = _dedupe_key(result[matched], f"{current_date}|{cat}|{item}")
                 result[matched].append({
                     "date": current_date,
                     "category": cat,
@@ -301,8 +345,10 @@ def _build_card_html(person: str, category_totals: dict, month_label: str,
     if memo_with_amt:
         rows = ""
         for d, w, desc, amt in memo_with_amt:
-            rows += f'    <tr><td class="memo-date">{d}</td><td class="memo-who">{w}</td><td>{desc}</td><td class="sym">+$</td><td class="amt">{amt:,.0f}</td></tr>\n'
-        rows += f'    <tr class="divider"><td colspan="3">備忘小計</td><td class="sym">+$</td><td class="amt">{memo_subtotal:,.0f}</td></tr>\n'
+            sym = "+$" if amt >= 0 else "-$"
+            rows += f'    <tr><td class="memo-date">{d}</td><td class="memo-who">{w}</td><td>{desc}</td><td class="sym">{sym}</td><td class="amt">{abs(amt):,.0f}</td></tr>\n'
+        sub_sym = "+$" if memo_subtotal >= 0 else "-$"
+        rows += f'    <tr class="divider"><td colspan="3">備忘小計</td><td class="sym">{sub_sym}</td><td class="amt">{abs(memo_subtotal):,.0f}</td></tr>\n'
         memo_amt_table = f'\n  <table style="margin-top:1rem">\n    <tr><td colspan="5" class="section-title">備忘加項：</td></tr>\n{rows}  </table>'
 
     memo_no_amt_table = ""
@@ -444,8 +490,9 @@ if report_type == "全員月報":
         if _rkey not in st.session_state:
             st.session_state[_rkey] = _load_recon(year, month)
 
-        # DB lookup set for fast matching
+        # DB lookup sets for fast matching
         _db_set = {(e["date"], e["category"], e["person"]) for e in expenses}
+        _memo_set = {(m["date"], m["content"]) for m in memos}
 
         for person in person_names:
             person_df = df[df["person"] == person] if not df.empty else pd.DataFrame()
@@ -500,7 +547,11 @@ if report_type == "全員月報":
             person_raw = raw_hist.get(person, [])
             if person_raw:
                 _pstate = st.session_state[_rkey].get(person, {})
-                _auto_match = sum(1 for it in person_raw if (it["date"], it["category"], person) in _db_set)
+                def _item_in_db(it):
+                    if it["category"] == "⚠️備忘":
+                        return (it["date"], it["item_text"]) in _memo_set
+                    return (it["date"], it["category"], person) in _db_set
+                _auto_match = sum(1 for it in person_raw if _item_in_db(it))
                 _confirmed = sum(1 for it in person_raw if _pstate.get(it["key"], False))
                 _total = len(person_raw)
                 _exp_label = (
@@ -515,7 +566,7 @@ if report_type == "全員月報":
                         _dp = _date.split("-")
                         st.caption(f"📅 {int(_dp[1])}/{int(_dp[2])}")
                         for _it in _items:
-                            _in_db = (_it["date"], _it["category"], person) in _db_set
+                            _in_db = _item_in_db(_it)
                             _auto_icon = "✅" if _in_db else "🔴"
                             _cat_d = CATEGORY_DISPLAY.get(_it["category"], _it["category"])
                             _cb_label = f"{_auto_icon} {_cat_d} {_it['amount_str']}　`{_it['item_text']}`"
