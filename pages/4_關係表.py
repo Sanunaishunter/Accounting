@@ -1,14 +1,15 @@
 """關係表管理頁面 - 管理備忘關鍵字與人員的代理對應關係"""
+import html
+
 import streamlit as st
 
 import database as db
-from ui import apply_theme, page_header
+from ui import apply_theme, empty_state, page_header, pill
 
 
 st.set_page_config(page_title="關係表", page_icon="🔗", layout="wide")
 apply_theme()
-page_header("關係表管理")
-st.caption("設定備忘關鍵字與人員的對應關係。解析 ⚠️ 備忘時，內容包含關鍵字則自動掛到對應人員下。")
+page_header("關係表管理", "設定備忘關鍵字與人員的對應關係。解析 ⚠️ 備忘時，內容包含關鍵字則自動掛到對應人員下")
 
 # ========== 現有對應列表 ==========
 
@@ -16,19 +17,25 @@ proxies = db.get_person_proxies()
 persons = db.get_all_persons()
 person_names = [p["name"] for p in persons]
 
+sum1, sum2, _ = st.columns([1, 1, 2])
+sum1.metric("關鍵字", len(proxies))
+sum2.metric("已對應人員", len({p["proxy_for"] for p in proxies}))
+
 st.subheader("現有對應")
 
 if not proxies:
-    st.info("尚無對應關係，請在下方新增。")
+    empty_state("🔗", "尚無對應關係", "在下方新增第一組關鍵字與人員的對應")
 else:
     for proxy in proxies:
         with st.container(border=True):
             col_info, col_edit, col_del = st.columns([4, 4, 1])
 
             with col_info:
-                st.markdown(f"**{proxy['keyword']}** → `{proxy['proxy_for']}`")
-                if proxy["note"]:
-                    st.caption(proxy["note"])
+                note = f'<div class="rel-note">{html.escape(proxy["note"])}</div>' if proxy["note"] else ""
+                st.html(
+                    f'<div class="rel-row">{pill(html.escape(proxy["keyword"]), "accent")}'
+                    f'<span class="arrow">→</span>{pill(html.escape(proxy["proxy_for"]), "neutral")}</div>{note}'
+                )
 
             with col_edit:
                 with st.expander("編輯"):
@@ -55,7 +62,7 @@ else:
 
             with col_del:
                 st.write("")  # 對齊用
-                if st.button("❌", key=f"del_{proxy['id']}", help="刪除此對應"):
+                if st.button("🗑️", key=f"del_{proxy['id']}", help="刪除此對應"):
                     db.delete_person_proxy(proxy["id"])
                     st.warning(f"已刪除「{proxy['keyword']}」")
                     st.rerun()
@@ -72,7 +79,7 @@ with st.form("add_proxy_form", clear_on_submit=True):
     with col1:
         new_keyword = st.text_input("關鍵字", placeholder="例：外婆")
     with col2:
-        new_proxy_for = st.selectbox("代理人員", options=[""] + person_names)
+        new_proxy_for = st.selectbox("代理人員", options=person_names, index=None, placeholder="選擇人員")
     with col3:
         new_note = st.text_input("說明（選填）", placeholder="例：崴崴的外婆")
 
