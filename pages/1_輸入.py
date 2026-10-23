@@ -5,11 +5,15 @@ from datetime import datetime
 
 import database as db
 from parser import parse_accounting_text, ParseStatus
+import html
+
+from ui import apply_theme, page_header, pane_label, pill, steps
 from normalizer import DEFAULT_CATEGORIES, normalize_day, normalize_text, split_days
 
 
 st.set_page_config(page_title="輸入記帳", page_icon="📝", layout="wide")
-st.title("📝 輸入記帳資料")
+apply_theme()
+page_header("輸入記帳", "貼上原始文字 → 來點魔法整理 → 確認後一次寫入資料庫")
 
 # 中文星期
 WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"]
@@ -116,11 +120,11 @@ def magic_bulk_all() -> None:
 def render_magic_report(result, stale: bool) -> None:
     """顯示魔法結果：檢查通過／問題、需要確認的推測"""
     if stale:
-        st.warning("原始資料在整理後被修改過，右邊是舊的結果，請重新「來點魔法」")
+        st.html(pill("原始資料已修改，右邊是舊的結果，請重新「來點魔法」", "warn"))
     if result is None:
         return
     if result.ok:
-        st.caption("✅ 已整理，自動檢查通過")
+        st.html(pill("✓ 已整理，自動檢查通過", "ok"))
     else:
         st.warning("⚠️ 自動檢查發現 {} 個問題，請先確認：\n\n".format(len(result.problems))
                    + "\n".join(f"- {p}" for p in result.problems))
@@ -362,7 +366,7 @@ st.subheader(f"{year} 年 {month} 月")
 # 顯示星期標題
 header_cols = st.columns(7)
 for i, day_name in enumerate(WEEKDAYS):
-    header_cols[i].markdown(f"**{day_name}**")
+    header_cols[i].html(f'<div style="text-align:center;font-size:.8rem;font-weight:650;opacity:.6;letter-spacing:.08em">{day_name}</div>')
 
 # 顯示月曆格子
 for week in month_days:
@@ -395,7 +399,7 @@ if st.session_state.selected_date:
     date_str = f"{year}-{month:02d}-{day:02d}"
 
     st.divider()
-    st.subheader(f"📅 {date_title}")
+    st.subheader(date_title)
 
     # 檢查是否已有資料（支出或備忘）
     existing_expenses = db.get_expenses_by_date(date_str)
@@ -418,8 +422,10 @@ if st.session_state.selected_date:
     current_text = st.session_state.calendar_data.get(day, "")
     left, right = st.columns(2)
     with left:
+        pane_label("原始資料", pill("貼上或手打", "neutral"))
         input_text = st.text_area(
             "原始資料",
+            label_visibility="collapsed",
             value=current_text,
             height=240,
             key=f"input_{day}",
@@ -432,8 +438,10 @@ if st.session_state.selected_date:
 牛奶*1.5：小明"""
         )
     with right:
+        pane_label("✨ 魔法整理後", pill("可手動修改", "accent"))
         magic_text = st.text_area(
-            "整理後（可再手動修改）",
+            "魔法整理後",
+            label_visibility="collapsed",
             height=240,
             key=f"magic_{day}",
             placeholder="按下「✨ 來點魔法」，整理好的文字會出現在這裡",
@@ -594,12 +602,21 @@ if st.session_state.batch_mode and st.session_state.calendar_data:
 
 st.divider()
 st.subheader("整月批次輸入")
-st.caption("在大格貼入整個月的原始文字，點一下空白處（或按 Ctrl+Enter）就會自動依日期拆成一天一格；"
-           "每格左邊是原始資料、右邊是整理後的資料，確認後再一次寫入資料庫。重新貼上會重新拆格並清除右邊的整理結果。")
+st.caption("在大格貼入整個月的原始文字，點一下空白處（或按 Ctrl+Enter）就會自動依日期拆成一天一格。"
+           "重新貼上會重新拆格並清除右邊的整理結果。")
+
+cells = st.session_state.bulk_cells
+_magic_done = any(st.session_state.get(f"{bulk_key(i)}_res") for i in range(len(cells)))
+if not cells:
+    steps(active=1)
+elif not _magic_done:
+    steps(active=2, done=1)
+else:
+    steps(active=3, done=2)
 
 st.text_area(
     "貼入記帳文字（需包含日期行，如 `3/1（日）`）",
-    height=300,
+    height=260,
     key="bulk_input_text",
     on_change=split_bulk_text,
     placeholder="""範例：
@@ -612,39 +629,60 @@ st.text_area(
 牛奶*1.5：阿鵰、泰禎"""
 )
 
-cells = st.session_state.bulk_cells
+
+def cell_status(key: str) -> str:
+    """每格標題旁的狀態標籤（HTML）"""
+    out_text = st.session_state.get(f"{key}_out", "")
+    result = st.session_state.get(f"{key}_res")
+    if not out_text.strip() or result is None:
+        return pill("尚未整理", "neutral")
+    snapshot = st.session_state.get(f"{key}_snap")
+    if snapshot is not None and snapshot != st.session_state.get(f"{key}_src", ""):
+        return pill("原始資料已修改", "warn")
+    if not result.ok:
+        return pill(f"{len(result.problems)} 個問題", "warn")
+    if result.flags:
+        return pill(f"已整理 · {len(result.flags)} 處待確認", "accent")
+    return pill("✓ 已整理", "ok")
+
+
 bulk_parts = []
 if cells:
-    top1, top2, _ = st.columns([1, 1, 2])
+    top1, top2, top3 = st.columns([1.2, 1.2, 3])
     with top1:
         st.button("✨ 全部來點魔法", on_click=magic_bulk_all, type="primary", key="bulk_magic_all", width='stretch')
     with top2:
-        st.button("📥 重新依日期拆格", on_click=split_bulk_text, key="bulk_resplit", width='stretch')
-    st.write(f"**共 {len(cells)} 格**")
+        st.button("重新依日期拆格", on_click=split_bulk_text, key="bulk_resplit", width='stretch')
+    with top3:
+        st.html(f'<div style="padding-top:.55rem;opacity:.65;font-size:.9rem">共 <b>{len(cells)}</b> 天；'
+                '左邊是原始資料，右邊是魔法整理後的資料</div>')
 
     for i, title in enumerate(cells):
         key = bulk_key(i)
         src_text = st.session_state[f"{key}_src"]
         with st.container(border=True):
-            st.markdown(f"**📅 {title}**")
+            st.html(f'<div class="day-head"><span class="d">{html.escape(title)}</span>{cell_status(key)}</div>')
             left, right = st.columns(2)
             with left:
-                st.caption("原始資料")
+                pane_label("原始資料", pill("貼上的內容", "neutral"))
                 src_text = st.text_area("原始資料", key=f"{key}_src", height=text_height(src_text),
                                         label_visibility="collapsed")
             with right:
-                st.caption("整理後（可再手動修改）")
-                out_text = st.text_area("整理後", key=f"{key}_out", height=text_height(src_text),
+                pane_label("✨ 魔法整理後", pill("可手動修改", "accent"))
+                out_text = st.text_area("魔法整理後", key=f"{key}_out", height=text_height(src_text),
                                         label_visibility="collapsed",
                                         placeholder="按「✨ 來點魔法」後出現在這裡")
 
             st.button("✨ 來點魔法", on_click=magic_bulk_cells, args=([i],), key=f"{key}_btn",
                       disabled=not src_text.strip())
             snapshot = st.session_state.get(f"{key}_snap")
-            render_magic_report(
-                st.session_state.get(f"{key}_res") if out_text.strip() else None,
-                stale=bool(out_text.strip()) and snapshot is not None and snapshot != src_text,
-            )
+            result = st.session_state.get(f"{key}_res") if out_text.strip() else None
+            if result is not None and not result.ok:
+                st.warning("自動檢查發現問題，請先確認：\n\n" + "\n".join(f"- {p}" for p in result.problems))
+            if result is not None and result.flags:
+                with st.expander(f"需要你確認的 {len(result.flags)} 處"):
+                    for flag in result.flags:
+                        st.text(flag)
 
             # 實際寫入的內容：右邊有東西就用右邊，否則用左邊原始資料
             bulk_parts.append(out_text if out_text.strip() else src_text)
@@ -652,6 +690,7 @@ if cells:
 bulk_text = "\n\n".join(part for part in bulk_parts if part.strip())
 if cells:
     st.caption("寫入資料庫的是各格右邊整理後的文字；右邊留空的格子則寫入左邊原始資料")
+    st.html("<div style='height:.4rem'></div>")
 
 # 即時預覽
 if bulk_text.strip():

@@ -9,6 +9,7 @@ import streamlit as st
 from datetime import datetime
 
 import database as db
+from ui import apply_theme, page_header
 
 MEMO_AMOUNT_RE = re.compile(r'[+＋$＄]\s*[$＄]?\s*(\d+(?:\.\d+)?)')
 
@@ -133,7 +134,8 @@ _REPORT_CSS = """\
 
 
 st.set_page_config(page_title="報表", page_icon="📊", layout="wide")
-st.title("📊 統計報表")
+apply_theme()
+page_header("統計報表", "月報、月份比較、年度統計與費用查詢")
 
 # Tooltip CSS 樣式
 st.markdown("""

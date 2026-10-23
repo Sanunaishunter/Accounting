@@ -2,10 +2,12 @@
 import streamlit as st
 
 import database as db
+from ui import apply_theme, page_header
 
 
 st.set_page_config(page_title="關係表", page_icon="🔗", layout="wide")
-st.title("🔗 關係表管理")
+apply_theme()
+page_header("關係表管理")
 st.caption("設定備忘關鍵字與人員的對應關係。解析 ⚠️ 備忘時，內容包含關鍵字則自動掛到對應人員下。")
 
 # ========== 現有對應列表 ==========

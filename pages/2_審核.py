@@ -2,10 +2,12 @@
 import streamlit as st
 
 import database as db
+from ui import apply_theme, page_header
 
 
 st.set_page_config(page_title="審核", page_icon="🔍", layout="wide")
-st.title("🔍 待審核項目")
+apply_theme()
+page_header("待審核項目", "處理無法自動辨識的人名，設為別名、新增人員或忽略")
 
 # 取得待審核項目
 pending_items = db.get_all_pending_reviews()

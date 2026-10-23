@@ -2,7 +2,10 @@
 import streamlit as st
 from datetime import datetime
 
+import pandas as pd
+
 import database as db
+from ui import apply_theme, card, page_header
 
 
 st.set_page_config(
@@ -12,11 +15,8 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-st.title("💰 記帳系統")
-st.write("解析半結構化中文記帳文字，產出統計報表")
-
-# 顯示系統狀態
-st.divider()
+apply_theme()
+page_header("總覽", "解析半結構化中文記帳文字，產出統計報表")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -51,13 +51,13 @@ st.subheader("功能導覽")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.info("📝 **輸入頁面**\n\n月曆模式輸入，點擊日期輸入當日資料")
+    card("📝", "輸入", "月曆模式輸入單日資料，或整月貼上後依日期拆格、來點魔法整理，再一次寫入")
 
 with col2:
-    st.warning("🔍 **審核頁面**\n\n處理無法識別的人名，管理人員別名")
+    card("🔍", "審核", "處理無法識別的人名，管理人員別名")
 
 with col3:
-    st.success("📊 **報表頁面**\n\n查看統計報表，匯出資料")
+    card("📊", "報表", "查看統計報表、比較月份、匯出資料")
 
 
 # 類別單價設定
@@ -88,12 +88,27 @@ if expenses:
 
     # 取得最近的記錄（按日期排序）
     recent = sorted(expenses, key=lambda x: x["date"], reverse=True)[:10]
-
-    for exp in recent:
-        st.text(
-            f"{exp['date']} | {exp['category']} | {exp['person']} | "
-            f"${exp['amount']} × {exp['quantity']} = ${exp['amount'] * exp['quantity']}"
-        )
+    df = pd.DataFrame([
+        {
+            "日期": e["date"],
+            "類別": e["category"],
+            "人員": e["person"],
+            "單價": e["amount"],
+            "數量": e["quantity"],
+            "小計": e["amount"] * e["quantity"],
+        }
+        for e in recent
+    ])
+    st.dataframe(
+        df,
+        hide_index=True,
+        width='stretch',
+        column_config={
+            "單價": st.column_config.NumberColumn(format="$%d"),
+            "數量": st.column_config.NumberColumn(format="%g"),
+            "小計": st.column_config.NumberColumn(format="$%.0f"),
+        },
+    )
 
 
 # 側邊欄
