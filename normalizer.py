@@ -426,3 +426,44 @@ def normalize_text(text: str, names=None, categories=None) -> NormalizeResult:
     out, flags, derived = n.normalize(text)
     ok, problems = check(text, out, derived, n.categories)
     return NormalizeResult(text=out, flags=flags, derived=derived, ok=ok, problems=problems)
+
+
+# ===== 給輸入頁用：依日期拆格、單日整理 =====
+
+PREAMBLE_TITLE = "（日期行之前）"
+
+
+def split_days(text: str) -> list[dict]:
+    """依日期行把整段文字切成一天一格：[{"title": 日期行, "text": 含日期行的該天文字}]
+
+    第一個日期行之前若有內容，會放在標題為 PREAMBLE_TITLE 的第一格，避免資料遺失。
+    每格頭尾的空行會被去掉；格與格之間用空行串回去，與原文在解析上等價。
+    """
+    cells: list[list] = []  # [title, [lines]]
+    for raw in re.sub(r"\r\n?", "\n", str(text)).split("\n"):
+        line = _trim(raw)
+        if _DATE_LINE.fullmatch(line):
+            cells.append([line, [raw]])
+        elif cells:
+            cells[-1][1].append(raw)
+        elif line:
+            cells.append([PREAMBLE_TITLE, [raw]])
+
+    result = []
+    for title, lines in cells:
+        while lines and not _trim(lines[0]):
+            lines.pop(0)
+        while lines and not _trim(lines[-1]):
+            lines.pop()
+        result.append({"title": title, "text": "\n".join(lines)})
+    return result
+
+
+def normalize_day(text: str, header: str, names=None, categories=None) -> NormalizeResult:
+    """整理「單日」文字。文字沒有日期行時，暫時補上 header 讓整理器能運作，輸出再拿掉。"""
+    first = next((_trim(l) for l in str(text).split("\n") if _trim(l)), "")
+    if _DATE_LINE.fullmatch(first):
+        return normalize_text(text, names=names, categories=categories)
+    result = normalize_text(f"{header}\n{text}", names=names, categories=categories)
+    result.text = result.text.split("\n", 1)[1] if "\n" in result.text else ""
+    return result

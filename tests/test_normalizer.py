@@ -1,7 +1,7 @@
 """normalizer.py 的測試（案例與 Accounting_web/tests/normalizer.test.js 相同）"""
 import unittest
 
-from normalizer import check, normalize_text
+from normalizer import PREAMBLE_TITLE, check, normalize_day, normalize_text, split_days
 
 NAMES = ["傑森", "泰禎", "阿鵰", "紫緹", "米媽媽", "台北媽媽"]
 
@@ -204,6 +204,45 @@ class Checker(unittest.TestCase):
         # Python 的 \d 會吃全形數字，這裡確認只認 ASCII 數字
         r = normalize_text("9/1（一）\n⚠️書１２０⚠️", names=NAMES)
         self.assertEqual(r.text, "9/1（一）\n⚠️書１２０+$0000⚠️")
+
+
+class SplitDays(unittest.TestCase):
+    TEXT = "雜訊\n\n9/1（二）\n早餐：傑森\n\n\n9/25、9/26\n傑森直接+5000\n\n9/2（三）\r\n晚餐：阿鵰\n"
+
+    def test_splits_on_date_lines_and_keeps_preamble(self):
+        cells = split_days(self.TEXT)
+        self.assertEqual([c["title"] for c in cells], [PREAMBLE_TITLE, "9/1（二）", "9/25、9/26", "9/2（三）"])
+        self.assertEqual(cells[1]["text"], "9/1（二）\n早餐：傑森")
+        self.assertEqual(cells[3]["text"], "9/2（三）\n晚餐：阿鵰")
+
+    def test_no_text_lost(self):
+        joined = "\n\n".join(c["text"] for c in split_days(self.TEXT))
+        strip = lambda t: [l.strip() for l in t.replace("\r", "").split("\n") if l.strip()]
+        self.assertEqual(strip(joined), strip(self.TEXT))
+
+    def test_blank_or_dateless_text(self):
+        self.assertEqual(split_days("  \n\n"), [])
+        self.assertEqual([c["title"] for c in split_days("早餐：傑森")], [PREAMBLE_TITLE])
+
+    def test_per_cell_equals_whole_text(self):
+        whole = normalize_text(self.TEXT, names=NAMES).text
+        per_cell = "\n".join(normalize_text(c["text"], names=NAMES).text for c in split_days(self.TEXT))
+        strip = lambda t: [l.strip() for l in t.split("\n") if l.strip()]
+        self.assertEqual(strip(per_cell), strip(whole))
+
+
+class NormalizeDay(unittest.TestCase):
+    def test_text_without_date_line(self):
+        r = normalize_day("⚠️米媽媽蛋塔\n晚餐：傑森烤肉", "9/1（二）", names=NAMES)
+        self.assertEqual(r.text, "⚠️米媽媽蛋塔+$0000⚠️\n⚠️傑森烤肉+$0000⚠️\n晚餐：")
+        self.assertEqual(r.problems, [])
+
+    def test_text_with_date_line_is_untouched_apart_from_normalising(self):
+        r = normalize_day("9/1（二）\n⚠️米媽媽蛋塔", "9/1（二）", names=NAMES)
+        self.assertEqual(r.text, "9/1（二）\n⚠️米媽媽蛋塔+$0000⚠️")
+
+    def test_empty(self):
+        self.assertEqual(normalize_day("", "9/1（二）", names=NAMES).text, "")
 
 
 if __name__ == "__main__":
