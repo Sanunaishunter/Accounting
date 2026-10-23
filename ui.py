@@ -123,6 +123,16 @@ hr {{ border-color: var(--line) !important; margin: 1.6rem 0 !important; opacity
 .card-link .ic {{ font-size: 1.3rem; }}
 .card-link .tt {{ font-weight: 650; margin: .35rem 0 .2rem; }}
 .card-link .ds {{ opacity: .65; font-size: .88rem; line-height: 1.55; }}
+.rv-raw {{ font-size: 1.3rem; font-weight: 700; letter-spacing: -.01em; margin: .1rem 0 .55rem; word-break: break-all; }}
+.rv-meta {{ display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; font-size: .85rem; margin-bottom: .5rem; }}
+.rv-meta .mut {{ opacity: .55; }}
+.rel-row {{ display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }}
+.rel-row .arrow {{ opacity: .4; }}
+.rel-note {{ opacity: .6; font-size: .85rem; margin-top: .35rem; }}
+.empty {{ text-align: center; border: 1px dashed var(--line); border-radius: var(--radius); padding: 2.4rem 1rem; margin: .5rem 0 1rem; }}
+.empty .ic {{ font-size: 2rem; }}
+.empty .tt {{ font-weight: 650; margin: .45rem 0 .2rem; }}
+.empty .ds {{ opacity: .6; font-size: .9rem; }}
 </style>
 """
 
@@ -160,3 +170,7 @@ def steps(active: int, done: int = 0) -> None:
 
 def card(icon: str, title: str, desc: str) -> None:
     st.html(f'<div class="card-link"><div class="ic">{icon}</div><div class="tt">{title}</div><div class="ds">{desc}</div></div>')
+
+
+def empty_state(icon: str, title: str, desc: str = "") -> None:
+    st.html(f'<div class="empty"><div class="ic">{icon}</div><div class="tt">{title}</div><div class="ds">{desc}</div></div>')
