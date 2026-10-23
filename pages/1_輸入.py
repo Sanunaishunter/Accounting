@@ -5,6 +5,7 @@ from datetime import datetime
 
 import database as db
 from parser import parse_accounting_text, ParseStatus
+from normalizer import DEFAULT_CATEGORIES, normalize_text
 
 
 st.set_page_config(page_title="輸入記帳", page_icon="📝", layout="wide")
@@ -32,6 +33,10 @@ if "bulk_pending_items" not in st.session_state:
     st.session_state.bulk_pending_items = []
 if "bulk_memos" not in st.session_state:
     st.session_state.bulk_memos = []
+if "bulk_text_before_normalize" not in st.session_state:
+    st.session_state.bulk_text_before_normalize = None  # 整理格式前的文字，供還原
+if "bulk_normalize_result" not in st.session_state:
+    st.session_state.bulk_normalize_result = None
 
 
 def get_weekday_name(year: int, month: int, day: int) -> str:
@@ -44,6 +49,38 @@ def format_date_title(year: int, month: int, day: int) -> str:
     """格式化日期標題，如「1/19（一）」"""
     weekday_name = get_weekday_name(year, month, day)
     return f"{month}/{day}（{weekday_name}）"
+
+
+def normalize_options() -> dict:
+    """整理格式要用的已知人名（含別名、代理關鍵字）與類別"""
+    names = []
+    for p in db.get_all_persons():
+        names.append(p["name"])
+        if p["aliases"]:
+            names.extend(a.strip() for a in p["aliases"].split(",") if a.strip())
+    names.extend(db.get_person_proxy_mappings().keys())
+    categories = list(dict.fromkeys([*DEFAULT_CATEGORIES, *db.get_all_category_prices().keys()]))
+    return {"names": names, "categories": categories}
+
+
+def normalize_bulk_text() -> None:
+    """「整理格式」按鈕 callback：改寫整月批次輸入的文字，並保留原文可還原"""
+    text = st.session_state.bulk_input_text
+    if not text.strip():
+        return
+    result = normalize_text(text, **normalize_options())
+    st.session_state.bulk_text_before_normalize = text
+    st.session_state.bulk_normalize_result = result
+    st.session_state.bulk_input_text = result.text
+
+
+def undo_normalize_bulk_text() -> None:
+    """「還原整理前」按鈕 callback"""
+    if st.session_state.bulk_text_before_normalize is None:
+        return
+    st.session_state.bulk_input_text = st.session_state.bulk_text_before_normalize
+    st.session_state.bulk_text_before_normalize = None
+    st.session_state.bulk_normalize_result = None
 
 
 def process_bulk_text(text: str, year: int) -> dict:
@@ -488,6 +525,32 @@ bulk_text = st.text_area(
 早餐：小明
 牛奶*1.5：阿鵰、泰禎"""
 )
+
+norm_col1, norm_col2, _ = st.columns([1, 1, 3])
+with norm_col1:
+    st.button(
+        "✨ 整理格式",
+        on_click=normalize_bulk_text,
+        disabled=not bulk_text.strip(),
+        key="bulk_normalize",
+        help="把 ⚠️ 備忘整理成一品項一行（金額統一為 +$金額），並把類別行裡不是人名的項目拉成 ⚠️ 備忘",
+        width='stretch',
+    )
+with norm_col2:
+    if st.session_state.bulk_text_before_normalize is not None:
+        st.button("↩️ 還原整理前", on_click=undo_normalize_bulk_text, key="bulk_normalize_undo", width='stretch')
+
+norm_result = st.session_state.bulk_normalize_result
+if norm_result is not None:
+    if norm_result.ok:
+        st.success("已整理格式，自動檢查通過。請確認上方文字後再儲存。")
+    else:
+        st.warning("⚠️ 自動檢查發現 {} 個問題，請先確認：\n\n".format(len(norm_result.problems))
+                   + "\n".join(f"- {p}" for p in norm_result.problems))
+    if norm_result.flags:
+        with st.expander(f"需要你確認的 {len(norm_result.flags)} 處", expanded=True):
+            for flag in norm_result.flags:
+                st.text(flag)
 
 # 即時預覽
 if bulk_text.strip():
