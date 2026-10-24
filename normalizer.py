@@ -111,6 +111,37 @@ def _eval_expr(expr: str) -> Optional[float]:
     return float(Decimal(v).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
+# 電費不是支出類別，整理時會被拉成備忘，所以不拿來判斷「人名＋類別」
+_NON_EXPENSE_CATEGORIES = {"電費"}
+
+_RE_PERSON_CATEGORY = re.compile(
+    r"(.+?)((?:\*" + _NUM + r")?(?:[+＋][$＄]?" + _NUM + r")?)"
+)
+
+
+def infer_person_category(line: str, persons, categories) -> Optional[tuple[str, str]]:
+    """獨立行若是「人名＋類別（＋*次數）（＋金額）」，回傳 (類別, 項目)，否則 None
+
+    例：「阿鵰點心+70」→ ("點心", "阿鵰點心+70")；「傑森晚餐*2」→ ("晚餐", "傑森晚餐*2")。
+    persons 只放真正的人員與別名（代理關鍵字不算），categories 為已知類別。
+    項目裡的金額一律寫成 +數字（parser 不吃 +$）。
+    """
+    text = _trim(line)
+    if not text or "：" in text or ":" in text or _is_warn_line(text):
+        return None
+    m = _RE_PERSON_CATEGORY.fullmatch(text)
+    if not m:
+        return None
+    head, tail = m[1], m[2]
+    for name in sorted({p for p in persons if p}, key=len, reverse=True):
+        if head.startswith(name) and head[len(name):] in categories:
+            qty = re.search(r"\*" + _NUM, tail)
+            amount = re.search(r"[+＋][$＄]?(" + _NUM + ")", tail)
+            item = head + (qty[0] if qty else "") + (f"+{amount[1]}" if amount else "")
+            return head[len(name):], item
+    return None
+
+
 def _edit_distance_at_most_one(a: str, b: str) -> bool:
     if a == b:
         return True
@@ -134,8 +165,10 @@ class NormalizeResult:
 
 
 class Normalizer:
-    def __init__(self, names=None, categories=None):
+    def __init__(self, names=None, categories=None, persons=None):
         self.categories = list(categories) if categories else list(DEFAULT_CATEGORIES)
+        # 只有真正的人員與別名；有給才會把「阿鵰點心+70」這類獨立行補成類別行
+        self.persons = [p for p in dict.fromkeys(persons or []) if p]
         unique = list(dict.fromkeys(n for n in (names or []) if n))
         self.names = sorted(unique, key=len, reverse=True)
         self.flags: list[str] = []
@@ -301,7 +334,7 @@ class Normalizer:
             out[block["insert_at"]:block["insert_at"]] = memos
             block["insert_at"] += len(memos)
 
-        for raw_line in lines:
+        for line_no, raw_line in enumerate(lines):
             line = _trim(raw_line)
 
             if _DATE_LINE.fullmatch(line):
@@ -336,6 +369,18 @@ class Normalizer:
                 new_line, memos = self.category_line(line, m)
                 out.append(raw_line if new_line == line else new_line)
                 add_memos(memos)
+                continue
+
+            # 「人名＋類別」的獨立行（如 阿鵰點心+70）-> 補上類別前綴
+            inferred = None
+            if self.persons:
+                expense_cats = [c for c in self.categories if c not in _NON_EXPENSE_CATEGORIES]
+                inferred = infer_person_category(line, self.persons, expense_cats)
+            if inferred:
+                category, item = inferred
+                out.append(f"{category}：{item}")
+                self.derived.append({"kind": "category", "item": line, "category": category, "line": line_no})
+                self._flag(f"獨立行「{line}」判斷為「{category}：{item}」，請確認")
                 continue
 
             # 不屬於任何類別的獨立行 -> 備忘
@@ -383,6 +428,8 @@ def check(input_text: str, output: str, derived=None, categories=None) -> tuple[
     if seq(in_lines, date_of) != seq(out_lines, date_of):
         problems.append("日期行與原文不一致")
 
+    inferred_cat = {d["line"]: d["category"] for d in (derived or []) if d.get("kind") == "category"}
+
     def cat_of(l):
         if _is_warn_line(l):
             return ""
@@ -392,7 +439,8 @@ def check(input_text: str, output: str, derived=None, categories=None) -> tuple[
         base = _trim(_QTY_SUFFIX.sub("", _trim(m[1]), count=1))
         return base if base in categories else ""
 
-    if seq(in_lines, cat_of) != seq(out_lines, cat_of):
+    in_cats = "|".join(x for x in (inferred_cat.get(i) or cat_of(l) for i, l in enumerate(in_lines)) if x)
+    if in_cats != seq(out_lines, cat_of):
         problems.append("類別行的數量或順序與原文不一致")
 
     for l in out_lines:
@@ -405,7 +453,7 @@ def check(input_text: str, output: str, derived=None, categories=None) -> tuple[
         problems.append(f"原文的字在輸出中消失：{''.join(lost)}")
 
     derived = derived or []
-    derived_sum = sum(d["value"] for d in derived)
+    derived_sum = sum(d["value"] for d in derived if "value" in d)
     out_sum, in_sum = _sum_amounts(output), _sum_amounts(input_text)
     if abs(out_sum - in_sum - derived_sum) > 0.001:
         problems.append(f"金額合計不符：輸入 {_fmt(in_sum)} + 推算 {_fmt(derived_sum)} ≠ 輸出 {_fmt(out_sum)}")
@@ -417,12 +465,13 @@ def check(input_text: str, output: str, derived=None, categories=None) -> tuple[
     return not problems, problems
 
 
-def normalize_text(text: str, names=None, categories=None) -> NormalizeResult:
+def normalize_text(text: str, names=None, categories=None, persons=None) -> NormalizeResult:
     """整理記帳文字並自動檢查。
 
     names: 已知人名（含別名、代理關鍵字）；categories: 已知類別（會與預設類別合併使用者傳入的值）
+    persons: 只有真正的人員與別名；有給的話，「阿鵰點心+70」這類獨立行會補成「點心：阿鵰點心+70」
     """
-    n = Normalizer(names=names, categories=categories)
+    n = Normalizer(names=names, categories=categories, persons=persons)
     out, flags, derived = n.normalize(text)
     ok, problems = check(text, out, derived, n.categories)
     return NormalizeResult(text=out, flags=flags, derived=derived, ok=ok, problems=problems)
@@ -459,11 +508,11 @@ def split_days(text: str) -> list[dict]:
     return result
 
 
-def normalize_day(text: str, header: str, names=None, categories=None) -> NormalizeResult:
+def normalize_day(text: str, header: str, names=None, categories=None, persons=None) -> NormalizeResult:
     """整理「單日」文字。文字沒有日期行時，暫時補上 header 讓整理器能運作，輸出再拿掉。"""
     first = next((_trim(l) for l in str(text).split("\n") if _trim(l)), "")
     if _DATE_LINE.fullmatch(first):
-        return normalize_text(text, names=names, categories=categories)
-    result = normalize_text(f"{header}\n{text}", names=names, categories=categories)
+        return normalize_text(text, names=names, categories=categories, persons=persons)
+    result = normalize_text(f"{header}\n{text}", names=names, categories=categories, persons=persons)
     result.text = result.text.split("\n", 1)[1] if "\n" in result.text else ""
     return result

@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Optional
 
 import database as db
+from normalizer import infer_person_category
 
 
 class MatchConfidence(Enum):
@@ -180,7 +181,16 @@ class ExpenseParser:
                 )
                 continue
 
-            # 4. 獨立備忘（以上都不符合）
+            # 4. 「人名＋類別」的獨立行（如 阿鵰點心+70）→ 當作該類別的支出
+            inferred = infer_person_category(
+                line, [*self.persons_cache, *self.aliases_cache], list(self.category_prices)
+            )
+            if inferred and current_date:
+                category, item = inferred
+                self._parse_expense_items(item, category, 1.0, current_date, line, result)
+                continue
+
+            # 5. 獨立備忘（以上都不符合）
             if current_date:
                 result.memos.append(ParsedMemo(
                     date=current_date,

@@ -62,9 +62,10 @@ def normalize_options() -> dict:
         names.append(p["name"])
         if p["aliases"]:
             names.extend(a.strip() for a in p["aliases"].split(",") if a.strip())
+    persons = list(names)  # 真正的人員與別名（代理關鍵字不算），用來判斷「阿鵰點心+70」這類獨立行
     names.extend(db.get_person_proxy_mappings().keys())
     categories = list(dict.fromkeys([*DEFAULT_CATEGORIES, *db.get_all_category_prices().keys()]))
-    return {"names": names, "categories": categories}
+    return {"names": names, "categories": categories, "persons": persons}
 
 
 def magic_single_day(day: int, header: str) -> None:

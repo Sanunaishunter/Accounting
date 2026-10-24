@@ -1,7 +1,7 @@
 """normalizer.py 的測試（案例與 Accounting_web/tests/normalizer.test.js 相同）"""
 import unittest
 
-from normalizer import PREAMBLE_TITLE, check, normalize_day, normalize_text, split_days
+from normalizer import PREAMBLE_TITLE, check, infer_person_category, normalize_day, normalize_text, split_days
 
 NAMES = ["傑森", "泰禎", "阿鵰", "紫緹", "米媽媽", "台北媽媽"]
 
@@ -243,6 +243,47 @@ class NormalizeDay(unittest.TestCase):
 
     def test_empty(self):
         self.assertEqual(normalize_day("", "9/1（二）", names=NAMES).text, "")
+
+
+class PersonCategoryLines(unittest.TestCase):
+    PERSONS = ["傑森", "泰禎", "阿鵰"]
+    CATS = ["早餐", "點心", "晚餐", "牛奶"]
+
+    def test_infer(self):
+        f = lambda line: infer_person_category(line, self.PERSONS, self.CATS)
+        self.assertEqual(f("阿鵰點心+70"), ("點心", "阿鵰點心+70"))
+        self.assertEqual(f("阿鵰點心＋$70"), ("點心", "阿鵰點心+70"))
+        self.assertEqual(f("傑森晚餐*2"), ("晚餐", "傑森晚餐*2"))
+        self.assertEqual(f("傑森晚餐*2+30"), ("晚餐", "傑森晚餐*2+30"))
+        self.assertEqual(f("阿鵰點心"), ("點心", "阿鵰點心"))
+        for line in ["點心：阿鵰點心+70", "⚠️阿鵰點心+70⚠️", "傑森直接+5000", "阿鵰點心120", "米媽媽點心+70", "點心+70", ""]:
+            self.assertIsNone(f(line), line)
+
+    def test_normalizer_adds_category_prefix(self):
+        text = "10/22（四）\n阿鵰點心+70\n泰禎點心+70"
+        r = normalize_text(text, names=NAMES, persons=["阿鵰", "泰禎"])
+        self.assertEqual(r.text, "10/22（四）\n點心：阿鵰點心+70\n點心：泰禎點心+70")
+        self.assertEqual(r.problems, [])
+        self.assertTrue(any("判斷為「點心：阿鵰點心+70」" in f for f in r.flags))
+        again = normalize_text(r.text, names=NAMES, persons=["阿鵰", "泰禎"])
+        self.assertEqual(again.text, r.text)
+        self.assertEqual(again.problems, [])
+
+    def test_keeps_position_among_other_lines(self):
+        text = "10/22（四）\n⚠️還書+100\n早餐：傑森\n阿鵰點心+$70\n晚餐：泰禎"
+        r = normalize_text(text, names=NAMES, persons=["傑森", "阿鵰", "泰禎"])
+        self.assertEqual(r.text, "10/22（四）\n⚠️還書+$100⚠️\n早餐：傑森\n點心：阿鵰點心+70\n晚餐：泰禎")
+        self.assertEqual(r.problems, [])
+
+    def test_off_by_default_and_ignores_proxy_names(self):
+        text = "10/22（四）\n阿鵰點心+70"
+        self.assertEqual(normalize_text(text, names=NAMES).text, "10/22（四）\n⚠️阿鵰點心+$70⚠️")
+        r = normalize_text("10/22（四）\n米媽媽點心+70", names=NAMES, persons=["阿鵰"])
+        self.assertEqual(r.text, "10/22（四）\n⚠️米媽媽點心+$70⚠️")
+
+    def test_electricity_is_not_an_expense_category(self):
+        r = normalize_text("10/22（四）\n傑森電費+500", names=NAMES, persons=["傑森"])
+        self.assertEqual(r.text, "10/22（四）\n⚠️傑森電費+$500⚠️")
 
 
 if __name__ == "__main__":
