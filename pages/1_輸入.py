@@ -7,12 +7,13 @@ import database as db
 from parser import parse_accounting_text, ParseStatus
 import html
 
-from ui import apply_theme, page_header, pane_label, pill, steps
+from ui import apply_theme, is_mobile, page_header, pane_label, pill, steps
 from normalizer import DEFAULT_CATEGORIES, normalize_day, normalize_text, split_days
 
 
 st.set_page_config(page_title="輸入記帳", page_icon="📝", layout="wide")
 apply_theme()
+MOBILE = is_mobile()
 page_header("輸入記帳", "貼上原始文字 → 來點魔法整理 → 確認後一次寫入資料庫")
 
 # 中文星期
@@ -273,11 +274,12 @@ def process_single_day(year: int, month: int, day: int, text: str) -> dict:
 
 # ========== 側邊欄：年月選擇 ==========
 
-with st.sidebar:
-    st.subheader("選擇年月")
+current_year = datetime.now().year
+current_month = datetime.now().month
 
-    current_year = datetime.now().year
-    current_month = datetime.now().month
+with (st.container(key="ymbar") if MOBILE else st.sidebar):
+    if not MOBILE:
+        st.subheader("選擇年月")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -295,7 +297,9 @@ with st.sidebar:
             key="select_month"
         )
 
-    st.divider()
+with st.sidebar:
+    if not MOBILE:
+        st.divider()
 
     # 人員列表
     st.subheader("人員列表")
@@ -364,32 +368,33 @@ dates_with_data = db.get_dates_with_data(year, month)
 
 st.subheader(f"{year} 年 {month} 月")
 
-# 顯示星期標題
-header_cols = st.columns(7)
-for i, day_name in enumerate(WEEKDAYS):
-    header_cols[i].html(f'<div style="text-align:center;font-size:.8rem;font-weight:650;opacity:.6;letter-spacing:.08em">{day_name}</div>')
+with st.container(key="calendar"):
+    # 顯示星期標題
+    header_cols = st.columns(7)
+    for i, day_name in enumerate(WEEKDAYS):
+        header_cols[i].html(f'<div style="text-align:center;font-size:.8rem;font-weight:650;opacity:.6;letter-spacing:.08em">{day_name}</div>')
 
-# 顯示月曆格子
-for week in month_days:
-    cols = st.columns(7)
-    for i, day in enumerate(week):
-        with cols[i]:
-            if day == 0:
-                st.write("")  # 空格
-            else:
-                has_data = day in dates_with_data
-                has_input = day in st.session_state.calendar_data
-
-                # 決定按鈕樣式
-                if has_data:
-                    button_label = f"🟢 {day}"
-                elif has_input:
-                    button_label = f"📝 {day}"
+    # 顯示月曆格子
+    for week in month_days:
+        cols = st.columns(7)
+        for i, day in enumerate(week):
+            with cols[i]:
+                if day == 0:
+                    st.write("")  # 空格
                 else:
-                    button_label = str(day)
+                    has_data = day in dates_with_data
+                    has_input = day in st.session_state.calendar_data
 
-                if st.button(button_label, key=f"day_{day}", width='stretch'):
-                    st.session_state.selected_date = day
+                    # 決定按鈕樣式
+                    if has_data:
+                        button_label = f"🟢 {day}"
+                    elif has_input:
+                        button_label = f"📝 {day}"
+                    else:
+                        button_label = str(day)
+
+                    if st.button(button_label, key=f"day_{day}", width='stretch'):
+                        st.session_state.selected_date = day
 
 
 # ========== 日期輸入對話框 ==========
@@ -467,35 +472,36 @@ if st.session_state.selected_date:
     input_text_to_save = magic_text if magic_text.strip() else input_text
     st.caption("儲存的是右邊整理後的文字；右邊留空則儲存左邊原始資料")
 
-    col1, col2, col3 = st.columns(3)
+    with st.container(key="actions"):
+        col1, col2, col3 = st.columns(3)
 
-    with col1:
-        if st.button("💾 暫存", width='stretch'):
-            st.session_state.calendar_data[day] = input_text_to_save
-            st.success("已暫存")
+        with col1:
+            if st.button("💾 暫存", width='stretch'):
+                st.session_state.calendar_data[day] = input_text_to_save
+                st.success("已暫存")
 
-    with col2:
-        if st.button("✅ 儲存並關閉", type="primary", width='stretch'):
-            if input_text_to_save.strip():
-                result = process_single_day(year, month, day, input_text_to_save)
-                if result["status"] == "success":
-                    st.success(result["message"])
-                elif result["status"] == "warning":
-                    st.warning(result["message"])
-                # 清除暫存
-                if day in st.session_state.calendar_data:
-                    del st.session_state.calendar_data[day]
-            for k in (f"input_{day}", f"magic_{day}", f"magic_src_{day}", f"magic_res_{day}"):
-                st.session_state.pop(k, None)
-            st.session_state.selected_date = None
-            st.rerun()
+        with col2:
+            if st.button("✅ 儲存並關閉", type="primary", width='stretch'):
+                if input_text_to_save.strip():
+                    result = process_single_day(year, month, day, input_text_to_save)
+                    if result["status"] == "success":
+                        st.success(result["message"])
+                    elif result["status"] == "warning":
+                        st.warning(result["message"])
+                    # 清除暫存
+                    if day in st.session_state.calendar_data:
+                        del st.session_state.calendar_data[day]
+                for k in (f"input_{day}", f"magic_{day}", f"magic_src_{day}", f"magic_res_{day}"):
+                    st.session_state.pop(k, None)
+                st.session_state.selected_date = None
+                st.rerun()
 
-    with col3:
-        if st.button("❌ 取消", width='stretch'):
-            for k in (f"magic_{day}", f"magic_src_{day}", f"magic_res_{day}"):
-                st.session_state.pop(k, None)
-            st.session_state.selected_date = None
-            st.rerun()
+        with col3:
+            if st.button("❌ 取消", width='stretch'):
+                for k in (f"magic_{day}", f"magic_src_{day}", f"magic_res_{day}"):
+                    st.session_state.pop(k, None)
+                st.session_state.selected_date = None
+                st.rerun()
 
     # 即時預覽
     if input_text_to_save.strip():

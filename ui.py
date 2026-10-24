@@ -1,4 +1,6 @@
 """共用介面樣式與小元件（各頁在 set_page_config 之後呼叫 apply_theme）"""
+import re
+
 import streamlit as st
 
 # 主色與狀態色；背景與邊框一律用半透明，深色／淺色主題都適用
@@ -133,14 +135,82 @@ hr {{ border-color: var(--line) !important; margin: 1.6rem 0 !important; opacity
 .empty .ic {{ font-size: 2rem; }}
 .empty .tt {{ font-weight: 650; margin: .45rem 0 .2rem; }}
 .empty .ds {{ opacity: .6; font-size: .9rem; }}
+
+/* ---- 保持橫排的區塊（月曆、年月選擇、按鈕列）：用 st.container(key=...) 標記 ---- */
+.st-key-calendar [data-testid="stHorizontalBlock"],
+.st-key-actions [data-testid="stHorizontalBlock"],
+.st-key-ymbar [data-testid="stHorizontalBlock"] {{ flex-wrap: nowrap !important; gap: .35rem !important; }}
+.st-key-calendar [data-testid="stColumn"],
+.st-key-actions [data-testid="stColumn"],
+.st-key-ymbar [data-testid="stColumn"] {{ min-width: 0 !important; flex: 1 1 0 !important; width: auto !important; }}
+.st-key-calendar .stButton > button {{ padding: 0 !important; }}
+.st-key-calendar .stButton > button p {{ font-size: .85rem; white-space: nowrap; }}
+
+/* ---- 手機寬度 ---- */
+@media (max-width: 640px) {{
+  /* 上方留白給左上角的選單按鈕，不要壓到頁首 */
+  [data-testid="stMainBlockContainer"] {{ padding: 3.2rem .85rem 4rem; }}
+  .pg-head {{ margin-bottom: 1rem; }}
+  .pg-title {{ font-size: 1.5rem; }}
+  .pg-sub {{ font-size: .88rem; }}
+  h2 {{ font-size: 1.2rem !important; }}
+  hr {{ margin: 1.1rem 0 !important; }}
+  /* 指標卡：一排兩個 */
+  [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) {{ flex-wrap: wrap !important; gap: .6rem !important; }}
+  [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > [data-testid="stColumn"] {{
+    flex: 1 1 calc(50% - .6rem) !important; min-width: calc(50% - .6rem) !important; }}
+  [data-testid="stMetric"] {{ padding: .7rem .85rem; }}
+  [data-testid="stMetricValue"] {{ font-size: 1.55rem; }}
+  /* 好按的尺寸；輸入框 16px 以上，iPhone 才不會在聚焦時自動放大 */
+  .stButton > button, .stDownloadButton > button, [data-testid^="stBaseButton"] {{ min-height: 2.75rem; }}
+  input, textarea, [data-baseweb="select"] * {{ font-size: 16px !important; }}
+  [data-testid="stTextArea"] textarea {{ line-height: 1.6; }}
+  .st-key-calendar .stButton > button {{ min-height: 2.6rem; }}
+  .st-key-actions .stButton > button {{ padding: .2rem .25rem; }}
+  .st-key-actions .stButton > button p {{ font-size: .82rem; white-space: normal; line-height: 1.25; }}
+  .steps {{ gap: .35rem; }}
+  .step {{ font-size: .78rem; padding-right: .6rem; }}
+  .report {{ padding: 1rem 1rem; }}
+  .card-link {{ padding: .9rem 1rem; }}
+  .pane-label span.t {{ font-size: .78rem; }}
+}}
 </style>
 """
 
 
+_MOBILE_UA = re.compile(r"Mobi|Android|iPhone|iPod", re.I)  # iPad 當桌面，靠響應式 CSS 即可
+VIEW_OPTIONS = ["自動", "手機版", "桌面版"]
+_VIEW_QUERY = {"mobile": "手機版", "desktop": "桌面版"}
+
+
+def is_mobile() -> bool:
+    """目前是否使用手機版面：手動選擇優先，否則看 User-Agent"""
+    mode = st.session_state.get("view_mode_sel", "自動")
+    if mode == "手機版":
+        return True
+    if mode == "桌面版":
+        return False
+    try:
+        agent = st.context.headers.get("User-Agent", "") or ""
+    except Exception:  # 舊版 Streamlit 或沒有請求資訊（測試環境）
+        agent = ""
+    return bool(_MOBILE_UA.search(agent))
+
+
 def apply_theme() -> None:
-    """注入共用樣式；每頁在 st.set_page_config 之後呼叫一次"""
+    """注入共用樣式與「顯示設定」；每頁在 st.set_page_config 之後呼叫一次"""
     # 這版 st.html 會濾掉 <style>，所以用 st.markdown
     st.markdown(_CSS, unsafe_allow_html=True)
+
+    # 網址帶 ?view=mobile / ?view=desktop 可直接指定版面（第一次進來時生效）
+    if "view_mode_sel" not in st.session_state:
+        preset = _VIEW_QUERY.get(str(st.query_params.get("view", "")).lower())
+        if preset:
+            st.session_state["view_mode_sel"] = preset
+    with st.sidebar:
+        with st.expander("顯示設定"):
+            st.radio("版面", VIEW_OPTIONS, key="view_mode_sel", horizontal=True,
+                     help="自動：依裝置判斷；手機連線會用手機版面")
 
 
 def page_header(title: str, subtitle: str = "", eyebrow: str = "記帳系統") -> None:

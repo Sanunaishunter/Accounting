@@ -9,7 +9,7 @@ import streamlit as st
 from datetime import datetime
 
 import database as db
-from ui import apply_theme, page_header
+from ui import apply_theme, is_mobile, page_header
 
 MEMO_AMOUNT_RE = re.compile(r'[+＋$＄]\s*[$＄]?\s*(\d+(?:\.\d+)?)')
 
@@ -135,6 +135,8 @@ _REPORT_CSS = """\
 
 st.set_page_config(page_title="報表", page_icon="📊", layout="wide")
 apply_theme()
+MOBILE = is_mobile()
+GRID = 1 if MOBILE else 3  # 每排幾張卡片
 page_header("統計報表", "月報、月份比較、年度統計與費用查詢")
 
 # Tooltip CSS 樣式
@@ -169,6 +171,13 @@ st.markdown("""
 }
 .tooltip-container:hover .tooltip-text {
     visibility: visible;
+}
+@media (max-width: 640px) {
+    .tooltip-container .tooltip-text {
+        left: auto; right: 0; top: calc(100% + 4px); transform: none;
+        white-space: normal; max-width: 60vw;
+    }
+    .tooltip-text::before { display: none; }
 }
 .tooltip-text::before {
     content: "";
@@ -381,8 +390,9 @@ def render_empty_card():
 
 
 # 側邊欄：篩選條件
-with st.sidebar:
-    st.subheader("篩選條件")
+with (st.expander("篩選條件", expanded=True) if MOBILE else st.sidebar):
+    if not MOBILE:
+        st.subheader("篩選條件")
 
     # 取得可用年份
     available_years = db.get_expense_years()
@@ -461,9 +471,9 @@ if report_type == "全員月報":
 
         grid_cols = None
         for idx, person in enumerate(person_names):
-            if idx % 3 == 0:
-                grid_cols = st.columns(3)
-            with grid_cols[idx % 3]:
+            if idx % GRID == 0:
+                grid_cols = st.columns(GRID)
+            with grid_cols[idx % GRID]:
                 person_df = df[df["person"] == person] if not df.empty else pd.DataFrame()
                 person_memo_list = person_memos_dict.get(person, [])
 
@@ -599,9 +609,9 @@ elif report_type == "月份比較":
             yearly_df["month"] = pd.to_datetime(yearly_df["date"]).dt.month
 
             # 按3個月一排顯示
-            for i in range(0, len(compare_months), 3):
-                cols = st.columns(3)
-                batch = compare_months[i:i+3]
+            for i in range(0, len(compare_months), GRID):
+                cols = st.columns(GRID)
+                batch = compare_months[i:i+GRID]
 
                 for j, col in enumerate(cols):
                     with col:
@@ -652,9 +662,9 @@ elif report_type == "年度統計":
         yearly_df["total"] = yearly_df["amount"] * yearly_df["quantity"]
 
         # 每人全年總計，3人一排
-        for i in range(0, len(person_names), 3):
-            cols = st.columns(3)
-            batch = person_names[i:i+3]
+        for i in range(0, len(person_names), GRID):
+            cols = st.columns(GRID)
+            batch = person_names[i:i+GRID]
 
             for j, col in enumerate(cols):
                 with col:
