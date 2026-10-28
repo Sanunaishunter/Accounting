@@ -1,42 +1,53 @@
 """審核頁面 - 處理待審核的項目"""
+import html
+
 import streamlit as st
 
 import database as db
+from ui import apply_theme, empty_state, page_header, pill
 
 
 st.set_page_config(page_title="審核", page_icon="🔍", layout="wide")
-st.title("🔍 待審核項目")
+apply_theme()
+page_header("待審核項目", "處理無法自動辨識的人名，設為別名、新增人員或忽略")
 
 # 取得待審核項目
 pending_items = db.get_all_pending_reviews()
 persons = db.get_all_persons()
 person_names = [p["name"] for p in persons]
 
-if not pending_items:
-    st.success("沒有待審核的項目！")
-    st.balloons()
-else:
-    st.info(f"共有 {len(pending_items)} 筆待審核項目")
+sum1, sum2, sum3 = st.columns(3)
+sum1.metric("待審核", len(pending_items))
+sum2.metric("人員數", len(persons))
+sum3.metric("別名總數", sum(len([a for a in (p["aliases"] or "").split(",") if a.strip()]) for p in persons))
+st.html("<div style='height:.6rem'></div>")
 
+if not pending_items:
+    empty_state("✅", "沒有待審核的項目", "所有無法辨識的名稱都已處理完畢")
+else:
     for item in pending_items:
-        with st.container():
-            st.divider()
+        with st.container(border=True):
             col1, col2 = st.columns([2, 3])
 
             with col1:
-                st.write(f"**原始文字：** {item['raw_text']}")
-                st.write(f"**來源行：** {item['source_line']}")
-                st.write(f"**日期：** {item['date']}")
-                st.caption(f"建立時間：{item['created_at']}")
+                st.html(
+                    f'<div class="rv-raw">{html.escape(item["raw_text"])}</div>'
+                    f'<div class="rv-meta">{pill(html.escape(str(item["date"])), "accent")}'
+                    f'<span class="mut">建立於 {html.escape(str(item["created_at"])[:16].replace("T", " "))}</span></div>'
+                )
+                st.caption("來源行")
+                st.code(item["source_line"], language=None)
 
             with col2:
-                st.write("**處理選項：**")
+                st.caption("處理方式")
 
                 # 選項 1：是某人的別名
                 if person_names:
                     selected_person = st.selectbox(
                         "選擇人員",
-                        options=[""] + person_names,
+                        options=person_names,
+                        index=None,
+                        placeholder="選擇要設為別名的人員",
                         key=f"person_select_{item['id']}",
                         label_visibility="collapsed"
                     )
@@ -45,8 +56,9 @@ else:
 
                     with col_a:
                         if st.button(
-                            f"是「{selected_person}」的別名",
+                            f"是「{selected_person}」的別名" if selected_person else "設為某人的別名",
                             key=f"alias_{item['id']}",
+                            type="primary",
                             disabled=not selected_person
                         ):
                             # 找到該人員並新增別名

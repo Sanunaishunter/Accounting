@@ -9,6 +9,7 @@ import streamlit as st
 from datetime import datetime
 
 import database as db
+from ui import apply_theme, is_mobile, page_header
 
 MEMO_AMOUNT_RE = re.compile(r'([+-]?\d+(?:\.\d+)?)\s*$')
 
@@ -177,7 +178,10 @@ _REPORT_CSS = """\
 
 
 st.set_page_config(page_title="報表", page_icon="📊", layout="wide")
-st.title("📊 統計報表")
+apply_theme()
+MOBILE = is_mobile()
+GRID = 1 if MOBILE else 3  # 每排幾張卡片
+page_header("統計報表", "月報、月份比較、年度統計與費用查詢")
 
 # Tooltip CSS 樣式
 st.markdown("""
@@ -191,7 +195,7 @@ st.markdown("""
     border-radius: 4px;
 }
 .tooltip-container:hover {
-    background-color: #f0f2f6;
+    background-color: rgba(128, 133, 149, .22);
 }
 .tooltip-container .tooltip-text {
     visibility: hidden;
@@ -212,6 +216,13 @@ st.markdown("""
 .tooltip-container:hover .tooltip-text {
     visibility: visible;
 }
+@media (max-width: 640px) {
+    .tooltip-container .tooltip-text {
+        left: auto; right: 0; top: calc(100% + 4px); transform: none;
+        white-space: normal; max-width: 60vw;
+    }
+    .tooltip-text::before { display: none; }
+}
 .tooltip-text::before {
     content: "";
     position: absolute;
@@ -222,16 +233,19 @@ st.markdown("""
     border-style: solid;
     border-color: transparent #333 transparent transparent;
 }
-.report { font-family: monospace; font-size: 14px; padding: 1.5rem; background: #1e1e1e; border-radius: 8px; max-width: 360px; }
+.report { font-family: ui-monospace, "SF Mono", "Noto Sans Mono CJK TC", "Noto Sans TC", Menlo, monospace; font-size: 14px; padding: 1.3rem 1.4rem; background: var(--soft); border: 1px solid var(--line); border-radius: 14px; font-variant-numeric: tabular-nums; }
+.report.flat { background: none; border: none; padding: .2rem 0; }
+.report h3 { font-family: inherit; font-size: 1.05rem; margin: 0 0 2px; padding: 0; opacity: .7; font-weight: 600; }
 .report table { width: 100%; border-collapse: collapse; }
-.report td { padding: 3px 6px; }
-.report .sym { text-align: right; width: 20px; color: #888; }
+.report td { padding: 4px 6px; border: none; }
+.report .sym { text-align: right; width: 20px; opacity: .45; }
 .report .amt { text-align: right; width: 80px; }
-.report .divider td { border-top: 1px solid #444; padding-top: 6px; font-weight: bold; }
-.report .section-title { color: #888; font-size: 13px; padding-top: 1rem; padding-bottom: 4px; }
-.report .memo-date { width: 40px; color: #888; }
-.report .memo-who { width: 60px; color: #888; }
-.report .total-row td { font-weight: bold; padding-top: 6px; border-top: 2px solid #666; }
+.report .divider td { border-top: 1px solid var(--line); padding-top: 7px; font-weight: 700; }
+.report .section-title { opacity: .55; font-size: 12px; letter-spacing: .06em; padding-top: .8rem; padding-bottom: 4px; }
+.report .memo-date { width: 40px; opacity: .55; white-space: nowrap; }
+.report .memo-who { width: 48px; opacity: .55; white-space: nowrap; }
+.report div[style*="color:#aaa"] { color: inherit !important; opacity: .65; }
+.report .total-row td { font-weight: 700; font-size: 1.05rem; padding-top: 8px; border-top: 2px solid var(--acc); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -422,8 +436,9 @@ def render_empty_card():
 
 
 # 側邊欄：篩選條件
-with st.sidebar:
-    st.subheader("篩選條件")
+with (st.expander("篩選條件", expanded=True) if MOBILE else st.sidebar):
+    if not MOBILE:
+        st.subheader("篩選條件")
 
     # 取得可用年份
     available_years = db.get_expense_years()
@@ -479,6 +494,13 @@ if report_type == "全員月報":
         if not df.empty:
             df["total"] = df["amount"] * df["quantity"]
 
+        sum1, sum2, sum3, sum4 = st.columns(4)
+        sum1.metric("全體總計", f"${df['total'].sum():,.0f}" if not df.empty else "$0")
+        sum2.metric("有支出人數", df["person"].nunique() if not df.empty else 0)
+        sum3.metric("支出筆數", len(df))
+        sum4.metric("備忘", len(memos))
+        st.html("<div style='height:.8rem'></div>")
+
         # 對帳：解析原始歷史檔（每次選月份只解析一次）
         _hist_key = f"raw_hist_{year}_{month}"
         if _hist_key not in st.session_state:
@@ -494,100 +516,100 @@ if report_type == "全員月報":
         _db_set = {(e["date"], e["category"], e["person"]) for e in expenses}
         _memo_set = {(m["date"], m["content"]) for m in memos}
 
-        for person in person_names:
-            person_df = df[df["person"] == person] if not df.empty else pd.DataFrame()
-            person_memo_list = person_memos_dict.get(person, [])
+        grid_cols = None
+        for idx, person in enumerate(person_names):
+            if idx % GRID == 0:
+                grid_cols = st.columns(GRID)
+            with grid_cols[idx % GRID]:
+                person_df = df[df["person"] == person] if not df.empty else pd.DataFrame()
+                person_memo_list = person_memos_dict.get(person, [])
 
-            category_totals = (
-                person_df.groupby("category")["total"].sum().to_dict()
-                if not person_df.empty else {}
-            )
-            category_details = _build_category_details(person_df) if not person_df.empty else {}
-            card_html = _build_card_html(person, category_totals, month_label, person_memo_list, category_details)
-            st.markdown(card_html, unsafe_allow_html=True)
-
-            if manage_mode and not person_df.empty:
-                with st.expander("🗑️ 刪除記錄"):
-                    for _, row in person_df.iterrows():
-                        record_id = row["id"]
-                        cat_display = CATEGORY_DISPLAY.get(row["category"], row["category"])
-                        date_short = row["date"].split("-")[2]
-                        label = f"{date_short}日 {cat_display} ${row['total']:.0f}"
-                        if st.button(f"❌ {label}", key=f"del_monthly_{person}_{record_id}"):
-                            db.delete_expense(record_id)
-                            st.success(f"已刪除：{label}")
-                            st.rerun()
-
-            if manage_mode and person_memo_list:
-                with st.expander("🗑️ 刪除備忘"):
-                    for memo in person_memo_list:
-                        date_parts = memo["date"].split("-")
-                        display_date = f"{int(date_parts[1])}/{int(date_parts[2])}"
-                        label = f"{display_date} {memo['content']}"
-                        if st.button(f"❌ {label}", key=f"del_monthly_pmemo_{person}_{memo['id']}"):
-                            db.delete_memo(memo["id"])
-                            st.rerun()
-
-            single_html = (
-                f'<!DOCTYPE html>\n<html lang="zh-TW">\n<head>\n'
-                f'  <meta charset="utf-8">\n'
-                f'  <title>{month_label} {person}</title>\n'
-                f'  <style>\n    body {{ background: #111; color: #ddd; font-family: sans-serif; padding: 2rem; }}\n'
-                f'{_REPORT_CSS}\n  </style>\n</head>\n<body>\n{card_html}\n</body>\n</html>'
-            )
-            st.download_button(
-                label="📄 輸出報表",
-                data=single_html.encode("utf-8"),
-                file_name=f"{year}{month:02d}_{person}.html",
-                mime="text/html",
-                key=f"export_card_{person}",
-            )
-
-            # ===== 對帳 expander =====
-            person_raw = raw_hist.get(person, [])
-            if person_raw:
-                _pstate = st.session_state[_rkey].get(person, {})
-                def _item_in_db(it):
-                    if it["category"] == "⚠️備忘":
-                        return (it["date"], it["item_text"]) in _memo_set
-                    return (it["date"], it["category"], person) in _db_set
-                _auto_match = sum(1 for it in person_raw if _item_in_db(it))
-                _confirmed = sum(1 for it in person_raw if _pstate.get(it["key"], False))
-                _total = len(person_raw)
-                _exp_label = (
-                    f"🔍 對帳 {person}　"
-                    f"{'✅' if _auto_match == _total else '⚠️'} "
-                    f"{_auto_match}/{_total} 自動比對　"
-                    f"☑ {_confirmed} 已確認"
+                category_totals = (
+                    person_df.groupby("category")["total"].sum().to_dict()
+                    if not person_df.empty else {}
                 )
-                with st.expander(_exp_label):
-                    for _date, _items_iter in groupby(person_raw, key=lambda x: x["date"]):
-                        _items = list(_items_iter)
-                        _dp = _date.split("-")
-                        st.caption(f"📅 {int(_dp[1])}/{int(_dp[2])}")
-                        for _it in _items:
-                            _in_db = _item_in_db(_it)
-                            _auto_icon = "✅" if _in_db else "🔴"
-                            _cat_d = CATEGORY_DISPLAY.get(_it["category"], _it["category"])
-                            _cb_label = f"{_auto_icon} {_cat_d} {_it['amount_str']}　`{_it['item_text']}`"
-                            _cb_key = f"rcb_{person}_{_it['key']}"
-                            if _cb_key not in st.session_state:
-                                st.session_state[_cb_key] = _pstate.get(_it["key"], _in_db)
-                            st.checkbox(
-                                _cb_label,
-                                key=_cb_key,
-                                on_change=_save_recon_item,
-                                args=(year, month, person, _it["key"], _cb_key),
-                            )
-            elif _find_history_file(year, month) is None:
-                with st.expander(f"🔍 對帳 {person}"):
-                    st.warning(f"找不到 History/…{year}{month:02d}.txt")
+                category_details = _build_category_details(person_df) if not person_df.empty else {}
+                card_html = _build_card_html(person, category_totals, month_label, person_memo_list, category_details)
+                st.markdown(card_html, unsafe_allow_html=True)
 
-            st.divider()
+                if manage_mode and not person_df.empty:
+                    with st.expander("🗑️ 刪除記錄"):
+                        for _, row in person_df.iterrows():
+                            record_id = row["id"]
+                            cat_display = CATEGORY_DISPLAY.get(row["category"], row["category"])
+                            date_short = row["date"].split("-")[2]
+                            label = f"{date_short}日 {cat_display} ${row['total']:.0f}"
+                            if st.button(f"❌ {label}", key=f"del_monthly_{person}_{record_id}"):
+                                db.delete_expense(record_id)
+                                st.success(f"已刪除：{label}")
+                                st.rerun()
 
-        if not df.empty:
-            st.metric("全體總計", f"${df['total'].sum():,.0f}")
-        else:
+                if manage_mode and person_memo_list:
+                    with st.expander("🗑️ 刪除備忘"):
+                        for memo in person_memo_list:
+                            date_parts = memo["date"].split("-")
+                            display_date = f"{int(date_parts[1])}/{int(date_parts[2])}"
+                            label = f"{display_date} {memo['content']}"
+                            if st.button(f"❌ {label}", key=f"del_monthly_pmemo_{person}_{memo['id']}"):
+                                db.delete_memo(memo["id"])
+                                st.rerun()
+
+                single_html = (
+                    f'<!DOCTYPE html>\n<html lang="zh-TW">\n<head>\n'
+                    f'  <meta charset="utf-8">\n'
+                    f'  <title>{month_label} {person}</title>\n'
+                    f'  <style>\n    body {{ background: #111; color: #ddd; font-family: sans-serif; padding: 2rem; }}\n'
+                    f'{_REPORT_CSS}\n  </style>\n</head>\n<body>\n{card_html}\n</body>\n</html>'
+                )
+                st.download_button(
+                    label="📄 輸出報表",
+                    data=single_html.encode("utf-8"),
+                    file_name=f"{year}{month:02d}_{person}.html",
+                    mime="text/html",
+                    key=f"export_card_{person}",
+                )
+
+                # ===== 對帳 expander =====
+                person_raw = raw_hist.get(person, [])
+                if person_raw:
+                    _pstate = st.session_state[_rkey].get(person, {})
+                    def _item_in_db(it):
+                        if it["category"] == "⚠️備忘":
+                            return (it["date"], it["item_text"]) in _memo_set
+                        return (it["date"], it["category"], person) in _db_set
+                    _auto_match = sum(1 for it in person_raw if _item_in_db(it))
+                    _confirmed = sum(1 for it in person_raw if _pstate.get(it["key"], False))
+                    _total = len(person_raw)
+                    _exp_label = (
+                        f"🔍 對帳 {person}　"
+                        f"{'✅' if _auto_match == _total else '⚠️'} "
+                        f"{_auto_match}/{_total} 自動比對　"
+                        f"☑ {_confirmed} 已確認"
+                    )
+                    with st.expander(_exp_label):
+                        for _date, _items_iter in groupby(person_raw, key=lambda x: x["date"]):
+                            _items = list(_items_iter)
+                            _dp = _date.split("-")
+                            st.caption(f"📅 {int(_dp[1])}/{int(_dp[2])}")
+                            for _it in _items:
+                                _in_db = _item_in_db(_it)
+                                _auto_icon = "✅" if _in_db else "🔴"
+                                _cat_d = CATEGORY_DISPLAY.get(_it["category"], _it["category"])
+                                _cb_label = f"{_auto_icon} {_cat_d} {_it['amount_str']}　`{_it['item_text']}`"
+                                _cb_key = f"rcb_{person}_{_it['key']}"
+                                if _cb_key not in st.session_state:
+                                    st.session_state[_cb_key] = _pstate.get(_it["key"], _in_db)
+                                st.checkbox(
+                                    _cb_label,
+                                    key=_cb_key,
+                                    on_change=_save_recon_item,
+                                    args=(year, month, person, _it["key"], _cb_key),
+                                )
+                elif _find_history_file(year, month) is None:
+                    with st.expander(f"🔍 對帳 {person}"):
+                        st.warning(f"找不到 History/…{year}{month:02d}.txt")
+
+        if df.empty:
             st.info("本月無支出記錄")
 
         if uncategorized_memos:
@@ -638,9 +660,9 @@ elif report_type == "月份比較":
             yearly_df["month"] = pd.to_datetime(yearly_df["date"]).dt.month
 
             # 按3個月一排顯示
-            for i in range(0, len(compare_months), 3):
-                cols = st.columns(3)
-                batch = compare_months[i:i+3]
+            for i in range(0, len(compare_months), GRID):
+                cols = st.columns(GRID)
+                batch = compare_months[i:i+GRID]
 
                 for j, col in enumerate(cols):
                     with col:
@@ -662,9 +684,14 @@ elif report_type == "月份比較":
                 total = month_df["total"].sum() if not month_df.empty else 0
                 summary_data.append({
                     "月份": get_month_name(m),
-                    "總計": f"${total:,.0f}"
+                    "總計": float(total)
                 })
-            st.dataframe(pd.DataFrame(summary_data), hide_index=True, width='stretch')
+            st.dataframe(
+                pd.DataFrame(summary_data),
+                hide_index=True,
+                width='stretch',
+                column_config={"總計": st.column_config.NumberColumn(format="$%.0f")},
+            )
 
 
 elif report_type == "年度統計":
@@ -686,96 +713,98 @@ elif report_type == "年度統計":
         yearly_df["total"] = yearly_df["amount"] * yearly_df["quantity"]
 
         # 每人全年總計，3人一排
-        for i in range(0, len(person_names), 3):
-            cols = st.columns(3)
-            batch = person_names[i:i+3]
+        for i in range(0, len(person_names), GRID):
+            cols = st.columns(GRID)
+            batch = person_names[i:i+GRID]
 
             for j, col in enumerate(cols):
                 with col:
                     if j < len(batch):
                         person = batch[j]
                         person_df = yearly_df[yearly_df["person"] == person]
+                        with st.container(border=True):
 
-                        # 標題
-                        st.markdown(f"**{year} 全年**")
-                        st.markdown(f"### {person}")
-                        st.write("")
-
-                        # 按類別統計
-                        if person_df.empty:
-                            category_totals = {}
-                            category_details = {}
-                        else:
-                            category_totals = person_df.groupby("category")["total"].sum().to_dict()
-                            # 建立每個類別的明細（按月份分組）
-                            category_details = {}
-                            for cat in CATEGORY_ORDER:
-                                cat_df = person_df[person_df["category"] == cat]
-                                if not cat_df.empty:
-                                    details = []
-                                    for _, row in cat_df.iterrows():
-                                        date_parts = row["date"].split("-")
-                                        display_date = f"{int(date_parts[1])}/{int(date_parts[2])}"
-                                        details.append(f"{display_date}: ${row['total']:.0f}")
-                                    category_details[cat] = details
-
-                        total_amount = 0
-                        for cat in CATEGORY_ORDER:
-                            amount = category_totals.get(cat, 0)
-                            display_name = CATEGORY_DISPLAY.get(cat, cat)
-
-                            if cat in category_details and category_details[cat]:
-                                # 有明細，顯示 tooltip
-                                tooltip_content = "<br>".join(category_details[cat])
-                                html = f'''
-                                <div class="tooltip-container">
-                                    <span>{display_name}　${amount:,.0f}</span>
-                                    <span class="tooltip-text">{tooltip_content}</span>
-                                </div>
-                                '''
-                                st.markdown(html, unsafe_allow_html=True)
-                            else:
-                                st.text(f"{display_name}　${amount:,.0f}")
-
-                            total_amount += amount
-
-                        st.write("")
-                        st.markdown(f"**Total ${total_amount:,.0f}**")
-
-                        # 管理模式：顯示刪除選項
-                        if manage_mode and not person_df.empty:
-                            with st.expander("🗑️ 刪除記錄"):
-                                for _, row in person_df.iterrows():
-                                    record_id = row["id"]
-                                    cat_display = CATEGORY_DISPLAY.get(row["category"], row["category"])
-                                    date_parts = row["date"].split("-")
-                                    date_short = f"{int(date_parts[1])}/{int(date_parts[2])}"
-                                    label = f"{date_short} {cat_display} ${row['total']:.0f}"
-                                    if st.button(f"❌ {label}", key=f"del_yearly_{person}_{record_id}"):
-                                        db.delete_expense(record_id)
-                                        st.success(f"已刪除：{label}")
-                                        st.rerun()
-
-                        # 顯示該人員相關的備忘
-                        p_memos = yearly_person_memos.get(person, [])
-                        if p_memos:
+                            # 標題
+                            st.markdown(f"**{year} 全年**")
+                            st.markdown(f"### {person}")
                             st.write("")
-                            st.caption("📝 備忘")
-                            for memo in p_memos:
-                                date_parts = memo["date"].split("-")
-                                display_date = f"{int(date_parts[1])}/{int(date_parts[2])}"
-                                if manage_mode:
-                                    col_memo, col_del = st.columns([8, 1])
-                                    with col_memo:
+
+                            # 按類別統計
+                            if person_df.empty:
+                                category_totals = {}
+                                category_details = {}
+                            else:
+                                category_totals = person_df.groupby("category")["total"].sum().to_dict()
+                                # 建立每個類別的明細（按月份分組）
+                                category_details = {}
+                                for cat in CATEGORY_ORDER:
+                                    cat_df = person_df[person_df["category"] == cat]
+                                    if not cat_df.empty:
+                                        details = []
+                                        for _, row in cat_df.iterrows():
+                                            date_parts = row["date"].split("-")
+                                            display_date = f"{int(date_parts[1])}/{int(date_parts[2])}"
+                                            details.append(f"{display_date}: ${row['total']:.0f}")
+                                        category_details[cat] = details
+
+                            total_amount = 0
+                            rows_html = ""
+                            for cat in CATEGORY_ORDER:
+                                amount = category_totals.get(cat, 0)
+                                display_name = CATEGORY_DISPLAY.get(cat, cat)
+
+                                if cat in category_details and category_details[cat]:
+                                    # 有明細，顯示 tooltip
+                                    tooltip_content = "<br>".join(category_details[cat])
+                                    amt_cell = (f'<span class="tooltip-container">{amount:,.0f}'
+                                                f'<span class="tooltip-text">{tooltip_content}</span></span>')
+                                else:
+                                    amt_cell = f"{amount:,.0f}"
+                                rows_html += (f'<tr><td>{display_name}</td><td class="sym">$</td>'
+                                              f'<td class="amt">{amt_cell}</td></tr>')
+                                total_amount += amount
+
+                            st.markdown(
+                                f'<div class="report flat"><table>{rows_html}'
+                                f'<tr class="total-row"><td>Total</td><td class="sym">$</td>'
+                                f'<td class="amt">{total_amount:,.0f}</td></tr></table></div>',
+                                unsafe_allow_html=True,
+                            )
+
+                            # 管理模式：顯示刪除選項
+                            if manage_mode and not person_df.empty:
+                                with st.expander("🗑️ 刪除記錄"):
+                                    for _, row in person_df.iterrows():
+                                        record_id = row["id"]
+                                        cat_display = CATEGORY_DISPLAY.get(row["category"], row["category"])
+                                        date_parts = row["date"].split("-")
+                                        date_short = f"{int(date_parts[1])}/{int(date_parts[2])}"
+                                        label = f"{date_short} {cat_display} ${row['total']:.0f}"
+                                        if st.button(f"❌ {label}", key=f"del_yearly_{person}_{record_id}"):
+                                            db.delete_expense(record_id)
+                                            st.success(f"已刪除：{label}")
+                                            st.rerun()
+
+                            # 顯示該人員相關的備忘
+                            p_memos = yearly_person_memos.get(person, [])
+                            if p_memos:
+                                st.write("")
+                                st.caption("📝 備忘")
+                                for memo in p_memos:
+                                    date_parts = memo["date"].split("-")
+                                    display_date = f"{int(date_parts[1])}/{int(date_parts[2])}"
+                                    if manage_mode:
+                                        col_memo, col_del = st.columns([8, 1])
+                                        with col_memo:
+                                            st.markdown(f"<small>• {display_date} {memo['content']}</small>",
+                                                      unsafe_allow_html=True)
+                                        with col_del:
+                                            if st.button("❌", key=f"del_ypmemo_{person}_{memo['id']}"):
+                                                db.delete_memo(memo["id"])
+                                                st.rerun()
+                                    else:
                                         st.markdown(f"<small>• {display_date} {memo['content']}</small>",
                                                   unsafe_allow_html=True)
-                                    with col_del:
-                                        if st.button("❌", key=f"del_ypmemo_{person}_{memo['id']}"):
-                                            db.delete_memo(memo["id"])
-                                            st.rerun()
-                                else:
-                                    st.markdown(f"<small>• {display_date} {memo['content']}</small>",
-                                              unsafe_allow_html=True)
                     else:
                         render_empty_card()
 
@@ -870,15 +899,21 @@ with st.expander("展開查詢", expanded=False):
                 st.success(f"找到 {len(query_df)} 筆記錄")
 
                 # 顯示結果
-                for _, row in query_df.iterrows():
-                    date_parts = row["date"].split("-")
-                    display_date = f"{int(date_parts[1])}/{int(date_parts[2])}"
-                    cat_display = CATEGORY_DISPLAY.get(row["category"], row["category"])
-                    st.text(
-                        f"📅 {row['date']} ({display_date}) | "
-                        f"{row['person']} | {cat_display} | "
-                        f"${row['amount']}×{row['quantity']}=${row['total']:.0f}"
-                    )
+                result_df = query_df.copy()
+                result_df["類別"] = result_df["category"].map(lambda c: CATEGORY_DISPLAY.get(c, c))
+                result_df = result_df.sort_values("date").rename(
+                    columns={"date": "日期", "person": "人員", "amount": "單價", "quantity": "數量", "total": "小計"}
+                )[["日期", "人員", "類別", "單價", "數量", "小計"]]
+                st.dataframe(
+                    result_df,
+                    hide_index=True,
+                    width='stretch',
+                    column_config={
+                        "單價": st.column_config.NumberColumn(format="$%d"),
+                        "數量": st.column_config.NumberColumn(format="%g"),
+                        "小計": st.column_config.NumberColumn(format="$%.0f"),
+                    },
+                )
         else:
             st.info("該年度無資料")
 

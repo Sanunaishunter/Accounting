@@ -1,0 +1,16 @@
+[theme]
+font = "sans serif"
+baseRadius = "0.6rem"
+
+# 淺色／深色各自設定，沒有指定 base 時會跟隨系統
+[theme.light]
+primaryColor = "#4F6BED"
+
+[theme.dark]
+primaryColor = "#6D84F7"
+
+[client]
+toolbarMode = "viewer"
+
+[browser]
+gatherUsageStats = false

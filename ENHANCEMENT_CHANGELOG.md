@@ -3,6 +3,14 @@
 ## Overview
 This is a Streamlit-based accounting system designed for parsing semi-structured Chinese accounting text. It features a calendar-based input interface, person management, and expense reporting.
 
+## Date: 2026-10-23
+
+### 整月批次輸入新增「✨ 整理格式」（移植自 Accounting_web）
+- 新增 `normalizer.py`：把 ⚠️ 備忘整理成一品項一行（名稱前綴與品項交叉組合、金額統一為 `+$金額`、無金額補 `+$0000`、算式保留在括號內），並把類別行中不是人名的項目（如 `晚餐：傑森烤肉裕毛屋棉花田`）拉成 ⚠️ 備忘
+- 內建獨立檢查器（日期/類別行一致、字不遺失、金額合計），無法確定的推測會列在「需要你確認」
+- `pages/1_輸入.py`：整月批次輸入加入「整理格式」與「還原整理前」按鈕；人名取自人員、別名與代理關鍵字，類別取自預設值與類別單價設定
+- 測試：`python3 -m unittest discover -s tests -t .`（案例與 Accounting_web 相同，另與 JS 版逐字比對過）
+
 ## Date: 2026-02-04
 
 ## Summary of Changes
