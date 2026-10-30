@@ -111,7 +111,7 @@ button:disabled p {{ color: var(--ink2) !important; }}
   border-radius: 4px;
 }}
 [data-testid="stTextArea"] textarea::placeholder {{ opacity: .4; }}
-[class*="st-key-input_"] textarea, [class*="_src"] textarea, .st-key-bulk_input_text textarea {{ font-family: var(--kai); font-size: 1.15rem; }}
+[class*="st-key-raw_"] textarea {{ font-family: var(--kai); font-size: 1.15rem; }}
 [data-testid="stWidgetLabel"] p {{ font-weight: 600; font-size: .88rem; }}
 
 /* ---- 自訂小元件 ---- */
@@ -157,7 +157,9 @@ button:disabled p {{ color: var(--ink2) !important; }}
 /* ---- 批改紀錄：原稿 → 批改後 ---- */
 .marks {{ border: 1px solid var(--line); border-radius: 4px; background: #fff; padding: .55rem .9rem .6rem; margin: .7rem 0 .2rem; }}
 .marks .mt {{ font-size: .8rem; font-weight: 700; color: var(--red); margin-bottom: .15rem; }}
-.mk-row {{ display: flex; gap: .55rem; align-items: baseline; flex-wrap: wrap; font-size: .95rem; line-height: 2; }}
+.mk-row {{ display: grid; grid-template-columns: 1fr auto 1fr; gap: .7rem; align-items: start; font-size: .95rem; line-height: 1.9; padding: .3rem 0; border-top: 1px dashed var(--line); }}
+.mk-row:first-of-type {{ border-top: none; }}
+.mk-new {{ width: fit-content; max-width: 100%; }}
 .mk-old {{ font-family: var(--kai); font-size: 1.05rem; color: var(--ink2); text-decoration: line-through; text-decoration-color: rgba(210,59,46,.55); }}
 .mk-arrow {{ color: var(--red); }}
 .mk-new {{ text-decoration: underline wavy var(--red); text-underline-offset: 5px; text-decoration-thickness: 1.2px; }}
@@ -214,6 +216,8 @@ button:disabled p {{ color: var(--ink2) !important; }}
   .step {{ font-size: .78rem; }}
   .card-link {{ padding: .9rem 1rem; }}
   .pane-label span.t {{ font-size: .8rem; }}
+  .mk-row {{ grid-template-columns: 1fr; gap: .1rem; }}
+  .mk-arrow {{ transform: rotate(90deg); width: fit-content; }}
 }}
 </style>
 """
@@ -313,25 +317,21 @@ def empty_state(icon: str, title: str, desc: str = "") -> None:
 def diff_marks(src: str, out: str) -> tuple[int, str]:
     """比對原稿與整理後的文字，回傳（修改處數, 批改紀錄 HTML）
 
-    以「行」為單位：原稿有、整理後沒有的行畫刪除線，整理後新出現的行畫紅色波浪底線。
-    只有空白行或前後空白的差異不算修改。
+    以「行」為單位，連續被改動的行算一處：左邊是原稿的行（畫刪除線），
+    右邊是整理後的行（畫紅色波浪底線）。只有空白行或前後空白的差異不算修改。
     """
     a = [ln.strip() for ln in src.splitlines() if ln.strip()]
     b = [ln.strip() for ln in out.splitlines() if ln.strip()]
-    rows = []  # (old or None, new or None)
-    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
-        if tag == "equal":
-            continue
-        olds, news = a[i1:i2], b[j1:j2]
-        for k in range(max(len(olds), len(news))):
-            rows.append((olds[k] if k < len(olds) else None, news[k] if k < len(news) else None))
-    if not rows:
+    blocks = [(a[i1:i2], b[j1:j2])
+              for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes()
+              if tag != "equal"]
+    if not blocks:
         return 0, ""
 
     esc = _html.escape
     parts = []
-    for old, new in rows:
-        left = f'<span class="mk-old">{esc(old)}</span>' if old else '<span class="mk-old">（新增）</span>'
-        right = f'<span class="mk-new">{esc(new)}</span>' if new else '<span class="mk-none">（移除）</span>'
-        parts.append(f'<div class="mk-row">{left}<span class="mk-arrow">→</span>{right}</div>')
-    return len(rows), f'<div class="marks"><div class="mt">批改紀錄　{len(rows)} 處</div>{"".join(parts)}</div>'
+    for olds, news in blocks:
+        left = "".join(f'<div class="mk-old">{esc(x)}</div>' for x in olds) or '<div class="mk-old">（新增）</div>'
+        right = "".join(f'<div class="mk-new">{esc(x)}</div>' for x in news) or '<div class="mk-none">（移除）</div>'
+        parts.append(f'<div class="mk-row"><div>{left}</div><span class="mk-arrow">→</span><div>{right}</div></div>')
+    return len(blocks), f'<div class="marks"><div class="mt">批改紀錄　{len(blocks)} 處</div>{"".join(parts)}</div>'

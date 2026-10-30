@@ -115,6 +115,16 @@ def init_db() -> None:
         )
     """)
 
+    # day_inputs 每天的原始資料與魔法整理後的資料（輸入頁校對用；儲存後會取代當天已入帳的資料）
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS day_inputs (
+            date TEXT PRIMARY KEY,
+            raw_text TEXT NOT NULL,
+            magic_text TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+
     # memos 備忘
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS memos (
@@ -738,6 +748,42 @@ def get_recent_raw_inputs(limit: int = 20) -> list[dict]:
             (limit,),
         )
         return [dict(row) for row in cursor.fetchall()]
+
+
+def get_day_input(date: str) -> Optional[dict]:
+    """取得某天儲存的原始資料與魔法整理後的資料；沒有則回傳 None"""
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT date, raw_text, magic_text, updated_at FROM day_inputs WHERE date = ?", (date,)
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def save_day_input(date: str, raw_text: str, magic_text: str) -> None:
+    """儲存（或覆蓋）某天的原始資料與魔法整理後的資料"""
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """INSERT INTO day_inputs (date, raw_text, magic_text, updated_at) VALUES (?, ?, ?, ?)
+               ON CONFLICT(date) DO UPDATE SET raw_text = excluded.raw_text,
+                   magic_text = excluded.magic_text, updated_at = excluded.updated_at""",
+            (date, raw_text, magic_text, datetime.now().isoformat()),
+        )
+        conn.commit()
+
+
+def get_day_input_days(year: int, month: int) -> set[int]:
+    """取得指定年月已儲存（校對過）的日期數字集合"""
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT CAST(substr(date, 9, 2) AS INTEGER) AS day FROM day_inputs
+               WHERE substr(date, 1, 4) = ? AND CAST(substr(date, 6, 2) AS INTEGER) = ?""",
+            (str(year), month),
+        )
+        return {row["day"] for row in cursor.fetchall()}
 
 
 def add_memo(date: str, content: str, person: Optional[str] = None) -> int:
