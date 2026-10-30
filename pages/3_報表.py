@@ -161,20 +161,26 @@ def _save_recon_item(year: int, month: int, person: str, ikey: str, cb_key: str)
         json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
+_KAI = '"LXGW WenKai TC","AR PL UKai TW","BiauKai","Kaiti TC","KaiTi",serif'
 _REPORT_CSS = """\
-  .report { font-family: monospace; font-size: 14px; padding: 1.5rem; background: #1e1e1e; border-radius: 8px; color: #ddd; max-width: 360px; }
+  .report { font-family: "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; font-variant-numeric: tabular-nums; font-size: 14px; padding: 1rem 1.25rem 1.1rem; background: #fff; border: 1px solid #D6DED8; border-radius: 4px; color: #1E2A38; max-width: 360px; }
+  .report .rp-month { color: #5E6D7C; font-size: 12.5px; }
+  .report .rp-name { font-family: KAI; font-size: 28px; line-height: 1.25; border-bottom: 1.5px solid #1E2A38; padding-bottom: 4px; margin-bottom: 4px; }
+  .report h3 { font-size: 15px; margin: 0 0 4px; }
   .report table { width: 100%; border-collapse: collapse; }
-  .report td { padding: 3px 6px; }
-  .report .sym { text-align: right; width: 20px; color: #888; }
-  .report .amt { text-align: right; width: 80px; }
-  .report .divider td { border-top: 1px solid #444; padding-top: 6px; font-weight: bold; }
-  .report .section-title { color: #888; font-size: 13px; padding-top: 1rem; padding-bottom: 4px; }
-  .report .memo-date { width: 40px; color: #888; }
-  .report .memo-who { width: 60px; color: #888; }
-  .report .total-row td { font-weight: bold; padding-top: 6px; border-top: 2px solid #666; }
+  .report td { padding: 5px 6px; border: none; border-bottom: 1px solid #CDE2D6; }
+  .report td.label { color: #5E6D7C; }
+  .report .sym { text-align: right; width: 22px; color: #5E6D7C; }
+  .report .amt { text-align: right; width: 84px; }
+  .report .divider td { font-weight: 700; border-bottom: none; padding-top: 7px; }
+  .report .section-title { color: #5E6D7C; font-size: 12.5px; padding-top: 14px; border-bottom: none; }
+  .report .memo-date { width: 40px; color: #5E6D7C; white-space: nowrap; }
+  .report .memo-who { width: 48px; color: #5E6D7C; white-space: nowrap; }
+  .report .total-row td { font-weight: 700; font-size: 16px; padding-top: 8px; border-bottom: none; }
+  .report .total-row td.amt { border-bottom: 4px double #1E2A38; }
   .tooltip-container { position: relative; display: inline-block; cursor: pointer; }
-  .tooltip-container .tooltip-text { visibility: hidden; background-color: #333; color: #fff; text-align: left; border-radius: 6px; padding: 8px 12px; position: absolute; z-index: 1000; left: 105%; top: 50%; transform: translateY(-50%); white-space: nowrap; font-size: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
-  .tooltip-container:hover .tooltip-text { visibility: visible; }"""
+  .tooltip-container .tooltip-text { visibility: hidden; background-color: #1E2A38; color: #fff; text-align: left; border-radius: 4px; padding: 8px 12px; position: absolute; z-index: 1000; left: 105%; top: 50%; transform: translateY(-50%); white-space: nowrap; font-size: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+  .tooltip-container:hover .tooltip-text { visibility: visible; }""".replace("KAI", _KAI)
 
 
 st.set_page_config(page_title="報表", page_icon="📊", layout="wide")
@@ -190,7 +196,6 @@ st.markdown("""
     position: relative;
     display: inline-block;
     cursor: pointer;
-    font-family: monospace;
     padding: 2px 5px;
     border-radius: 4px;
 }
@@ -199,7 +204,7 @@ st.markdown("""
 }
 .tooltip-container .tooltip-text {
     visibility: hidden;
-    background-color: #333;
+    background-color: #1E2A38;
     color: #fff;
     text-align: left;
     border-radius: 6px;
@@ -231,23 +236,11 @@ st.markdown("""
     margin-top: -5px;
     border-width: 5px;
     border-style: solid;
-    border-color: transparent #333 transparent transparent;
+    border-color: transparent #1E2A38 transparent transparent;
 }
-.report { font-family: ui-monospace, "SF Mono", "Noto Sans Mono CJK TC", "Noto Sans TC", Menlo, monospace; font-size: 14px; padding: 1.3rem 1.4rem; background: var(--soft); border: 1px solid var(--line); border-radius: 14px; font-variant-numeric: tabular-nums; }
-.report.flat { background: none; border: none; padding: .2rem 0; }
-.report h3 { font-family: inherit; font-size: 1.05rem; margin: 0 0 2px; padding: 0; opacity: .7; font-weight: 600; }
-.report table { width: 100%; border-collapse: collapse; }
-.report td { padding: 4px 6px; border: none; }
-.report .sym { text-align: right; width: 20px; opacity: .45; }
-.report .amt { text-align: right; width: 80px; }
-.report .divider td { border-top: 1px solid var(--line); padding-top: 7px; font-weight: 700; }
-.report .section-title { opacity: .55; font-size: 12px; letter-spacing: .06em; padding-top: .8rem; padding-bottom: 4px; }
-.report .memo-date { width: 40px; opacity: .55; white-space: nowrap; }
-.report .memo-who { width: 48px; opacity: .55; white-space: nowrap; }
-.report div[style*="color:#aaa"] { color: inherit !important; opacity: .65; }
-.report .total-row td { font-weight: 700; font-size: 1.05rem; padding-top: 8px; border-top: 2px solid var(--acc); }
 </style>
 """, unsafe_allow_html=True)
+st.markdown(f"<style>{_REPORT_CSS}</style>", unsafe_allow_html=True)
 
 # 中文月份
 MONTH_NAMES = {
@@ -378,13 +371,13 @@ def _build_card_html(person: str, category_totals: dict, month_label: str,
         pending_note = "；".join(parts)
 
     return f"""<div class="report">
-  <h3 style="margin-bottom:2px">{month_label}</h3>
-  <div style="color:#aaa;font-size:16px;margin-bottom:0.5rem">{person}</div>
+  <div class="rp-month">{month_label}</div>
+  <div class="rp-name">{person}</div>
   <table>
-{cat_rows}    <tr class="divider"><td>Sub Total</td><td class="sym">$</td><td class="amt">{subtotal:,.0f}</td></tr>
+{cat_rows}    <tr class="divider"><td>小計</td><td class="sym">$</td><td class="amt">{subtotal:,.0f}</td></tr>
   </table>{memo_amt_table}{memo_no_amt_table}
   <table style="margin-top:1rem">
-    <tr class="total-row"><td>Total</td><td class="sym">$</td><td class="amt">{total:,.0f}</td><td style="color:#888;font-size:13px;padding-left:12px">{pending_note}</td></tr>
+    <tr class="total-row"><td>合計</td><td class="sym">$</td><td class="amt">{total:,.0f}</td><td style="color:#5E6D7C;font-size:12.5px;padding-left:12px;border:none">{pending_note}</td></tr>
   </table>
 </div>"""
 
@@ -435,17 +428,11 @@ def render_empty_card():
     st.write("")  # 空白佔位
 
 
-# 側邊欄：篩選條件
-with (st.expander("篩選條件", expanded=True) if MOBILE else st.sidebar):
-    if not MOBILE:
-        st.subheader("篩選條件")
+# 功能列：篩選條件（桌面一條橫列；手機收進展開區）
+available_years = db.get_expense_years() or [datetime.now().year]
 
-    # 取得可用年份
-    available_years = db.get_expense_years()
-    if not available_years:
-        available_years = [datetime.now().year]
-
-    year = st.selectbox("年份", options=available_years)
+with (st.expander("篩選條件", expanded=True) if MOBILE else st.container(horizontal=True, vertical_alignment="bottom", key="toolbar")):
+    year = st.selectbox("年份", options=available_years, width="stretch" if MOBILE else 110)
 
     # 取得該年份的月份
     available_months = db.get_expense_months(year) if year else []
@@ -455,22 +442,18 @@ with (st.expander("篩選條件", expanded=True) if MOBILE else st.sidebar):
     month = st.selectbox(
         "月份",
         options=available_months,
-        format_func=lambda x: f"{x}月"
+        format_func=lambda x: f"{x}月",
+        width="stretch" if MOBILE else 100,
     )
 
-    st.divider()
-
-    # 報表類型
-    report_type = st.radio(
+    report_type = st.segmented_control(
         "報表類型",
         options=["全員月報", "月份比較", "年度統計"],
-        index=0
-    )
+        default="全員月報",
+        key="report_type_sel",
+    ) or "全員月報"
 
-    st.divider()
-
-    # 管理模式
-    manage_mode = st.toggle("🔧 管理模式", value=False, help="開啟後可刪除記錄")
+    manage_mode = st.toggle("管理模式", value=False, help="開啟後可刪除記錄")
 
 
 # 取得人員列表
@@ -494,13 +477,6 @@ if report_type == "全員月報":
         if not df.empty:
             df["total"] = df["amount"] * df["quantity"]
 
-        sum1, sum2, sum3, sum4 = st.columns(4)
-        sum1.metric("全體總計", f"${df['total'].sum():,.0f}" if not df.empty else "$0")
-        sum2.metric("有支出人數", df["person"].nunique() if not df.empty else 0)
-        sum3.metric("支出筆數", len(df))
-        sum4.metric("備忘", len(memos))
-        st.html("<div style='height:.8rem'></div>")
-
         # 對帳：解析原始歷史檔（每次選月份只解析一次）
         _hist_key = f"raw_hist_{year}_{month}"
         if _hist_key not in st.session_state:
@@ -515,6 +491,27 @@ if report_type == "全員月報":
         # DB lookup sets for fast matching
         _db_set = {(e["date"], e["category"], e["person"]) for e in expenses}
         _memo_set = {(m["date"], m["content"]) for m in memos}
+
+        # 還沒對上的歷史項目（資料庫沒有、也沒勾已確認）＝ 你還需要校對的筆數
+        _open_total = 0
+        for _p in person_names:
+            _ps = st.session_state[_rkey].get(_p, {})
+            for _it in raw_hist.get(_p, []):
+                if _it["category"] == "⚠️備忘":
+                    _hit = (_it["date"], _it["item_text"]) in _memo_set
+                else:
+                    _hit = (_it["date"], _it["category"], _p) in _db_set
+                if not _hit and not _ps.get(_it["key"], False):
+                    _open_total += 1
+
+        sum1, sum2, sum3, sum4, sum5 = st.columns(5)
+        sum1.metric("全體總計", f"${df['total'].sum():,.0f}" if not df.empty else "$0")
+        sum2.metric("有支出人數", df["person"].nunique() if not df.empty else 0)
+        sum3.metric("支出筆數", len(df))
+        sum4.metric("備忘", len(memos))
+        sum5.metric("待校對", _open_total, help="History 原文有、資料庫對不上、也還沒勾「已確認」的項目")
+        st.html("<div style='height:.8rem'></div>")
+
 
         grid_cols = None
         for idx, person in enumerate(person_names):
@@ -558,7 +555,7 @@ if report_type == "全員月報":
                     f'<!DOCTYPE html>\n<html lang="zh-TW">\n<head>\n'
                     f'  <meta charset="utf-8">\n'
                     f'  <title>{month_label} {person}</title>\n'
-                    f'  <style>\n    body {{ background: #111; color: #ddd; font-family: sans-serif; padding: 2rem; }}\n'
+                    f'  <style>\n    body {{ background: #FBFCF9; color: #1E2A38; font-family: sans-serif; padding: 2rem; }}\n'
                     f'{_REPORT_CSS}\n  </style>\n</head>\n<body>\n{card_html}\n</body>\n</html>'
                 )
                 st.download_button(
@@ -766,7 +763,7 @@ elif report_type == "年度統計":
 
                             st.markdown(
                                 f'<div class="report flat"><table>{rows_html}'
-                                f'<tr class="total-row"><td>Total</td><td class="sym">$</td>'
+                                f'<tr class="total-row"><td>合計</td><td class="sym">$</td>'
                                 f'<td class="amt">{total_amount:,.0f}</td></tr></table></div>',
                                 unsafe_allow_html=True,
                             )
@@ -976,7 +973,7 @@ if export_expenses:
                 who = memo.get("person") or ""
                 rows += f'    <tr><td class="memo-date">{d}</td><td class="memo-who">{who}</td><td colspan="3">{memo["content"]}</td></tr>\n'
             card_htmls.append(
-                f'<div class="report">\n  <h3>備忘（未歸類）</h3>\n  <table>\n{rows}  </table>\n</div>'
+                f'<div class="report">\n  <div class="rp-name">備忘（未歸類）</div>\n  <table>\n{rows}  </table>\n</div>'
             )
 
         report_css = _REPORT_CSS
@@ -988,7 +985,7 @@ if export_expenses:
   <meta charset="utf-8">
   <title>{month_label} 月結報表</title>
   <style>
-    body {{ background: #111; color: #ddd; font-family: sans-serif; padding: 2rem; }}
+    body {{ background: #FBFCF9; color: #1E2A38; font-family: sans-serif; padding: 2rem; }}
     .cards {{ display: flex; flex-wrap: wrap; gap: 1.5rem; }}
     .card-wrap {{ flex: 0 0 280px; }}
 {report_css}

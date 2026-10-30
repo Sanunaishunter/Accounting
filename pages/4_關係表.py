@@ -17,6 +17,11 @@ proxies = db.get_person_proxies()
 persons = db.get_all_persons()
 person_names = [p["name"] for p in persons]
 
+with st.expander("格式說明"):
+    st.write("**格式範例：**")
+    st.code("⚠️台北媽媽家檯燈1499⚠️", language=None)
+    st.write("若「台北媽媽」已設為牧恩的關鍵字，此備忘會自動掛到牧恩的報表下。")
+
 sum1, sum2, _ = st.columns([1, 1, 2])
 sum1.metric("關鍵字", len(proxies))
 sum2.metric("已對應人員", len({p["proxy_for"] for p in proxies}))
@@ -57,14 +62,14 @@ else:
                     )
                     if st.button("更新", key=f"upd_{proxy['id']}"):
                         db.update_person_proxy(proxy["id"], new_keyword, new_proxy_for, new_note)
-                        st.success("已更新")
+                        st.toast("已更新")
                         st.rerun()
 
             with col_del:
                 st.write("")  # 對齊用
                 if st.button("🗑️", key=f"del_{proxy['id']}", help="刪除此對應"):
                     db.delete_person_proxy(proxy["id"])
-                    st.warning(f"已刪除「{proxy['keyword']}」")
+                    st.toast(f"已刪除「{proxy['keyword']}」")
                     st.rerun()
 
 
@@ -90,21 +95,7 @@ with st.form("add_proxy_form", clear_on_submit=True):
         else:
             try:
                 db.add_person_proxy(new_keyword, new_proxy_for, new_note)
-                st.success(f"已新增：「{new_keyword}」→ {new_proxy_for}")
+                st.toast(f"已新增：「{new_keyword}」→ {new_proxy_for}")
                 st.rerun()
             except ValueError as e:
                 st.error(str(e))
-
-
-# ========== 側邊欄說明 ==========
-
-with st.sidebar:
-    st.subheader("使用說明")
-    st.write("**格式範例：**")
-    st.code("⚠️台北媽媽家檯燈1499⚠️", language=None)
-    st.write("若「台北媽媽」已設為牧恩的關鍵字，此備忘會自動掛到牧恩的報表下。")
-    st.divider()
-    st.write("**目前關鍵字數量：**", len(proxies))
-    if proxies:
-        for p in proxies:
-            st.text(f"• {p['keyword']} → {p['proxy_for']}")

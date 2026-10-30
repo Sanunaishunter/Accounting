@@ -12,7 +12,7 @@ st.set_page_config(
     page_title="記帳系統",
     page_icon="💰",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 apply_theme()
@@ -111,14 +111,9 @@ if expenses:
     )
 
 
-# 側邊欄
-with st.sidebar:
-    st.header("記帳系統")
-    st.caption(f"今天是 {datetime.now().strftime('%Y/%m/%d')}")
-
-    st.divider()
-
-    st.write("**支援的格式：**")
+# 輸入格式說明（原本在側邊欄）
+st.divider()
+with st.expander("輸入格式與解析規則"):
     st.code("""
 1/19（一）
 早餐：小明、小華
@@ -128,10 +123,6 @@ with st.sidebar:
 牛奶*1.5：小明
 ⚠️ 備忘內容
     """, language=None)
-
-    st.divider()
-
-    st.write("**解析規則：**")
     st.write("- `類別：人名` 基本格式")
     st.write("- `人名+金額` 額外金額")
     st.write("- `人名*次數` 多次")

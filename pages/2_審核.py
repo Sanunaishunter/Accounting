@@ -9,12 +9,17 @@ from ui import apply_theme, empty_state, page_header, pill
 
 st.set_page_config(page_title="審核", page_icon="🔍", layout="wide")
 apply_theme()
-page_header("待審核項目", "處理無法自動辨識的人名，設為別名、新增人員或忽略")
+page_header("待審核項目", "校對：處理無法自動辨識的人名，設為別名、新增人員或忽略")
 
 # 取得待審核項目
 pending_items = db.get_all_pending_reviews()
 persons = db.get_all_persons()
 person_names = [p["name"] for p in persons]
+
+# 人員與別名管理（原本在側邊欄）
+with st.container(horizontal=True, vertical_alignment="center", key="toolbar"):
+    people_box = st.popover("👥 人員與別名")
+    st.html(f'<span style="color:var(--ink2);font-size:.88rem">共 {len(persons)} 人；新增人員、編輯別名都在這裡</span>')
 
 sum1, sum2, sum3 = st.columns(3)
 sum1.metric("待審核", len(pending_items))
@@ -69,7 +74,7 @@ else:
 
                             # 刪除待審核項目
                             db.delete_pending_review(item["id"])
-                            st.success(f"已將「{item['raw_text']}」加為「{selected_person}」的別名")
+                            st.toast(f"已將「{item['raw_text']}」加為「{selected_person}」的別名")
                             st.rerun()
 
                     with col_b:
@@ -77,7 +82,7 @@ else:
                             try:
                                 db.add_person(item["raw_text"])
                                 db.delete_pending_review(item["id"])
-                                st.success(f"已新增人員：{item['raw_text']}")
+                                st.toast(f"已新增人員：{item['raw_text']}")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"新增失敗：{e}")
@@ -85,7 +90,7 @@ else:
                     with col_c:
                         if st.button("忽略此項", key=f"ignore_{item['id']}"):
                             db.delete_pending_review(item["id"])
-                            st.info("已忽略")
+                            st.toast("已忽略")
                             st.rerun()
                 else:
                     st.warning("尚無人員資料，請先到輸入頁面新增人員")
@@ -96,7 +101,7 @@ else:
                             try:
                                 db.add_person(item["raw_text"])
                                 db.delete_pending_review(item["id"])
-                                st.success(f"已新增人員：{item['raw_text']}")
+                                st.toast(f"已新增人員：{item['raw_text']}")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"新增失敗：{e}")
@@ -104,13 +109,13 @@ else:
                     with col_b:
                         if st.button("忽略", key=f"ignore_{item['id']}"):
                             db.delete_pending_review(item["id"])
-                            st.info("已忽略")
+                            st.toast("已忽略")
                             st.rerun()
 
-# 側邊欄：人員管理
-with st.sidebar:
-    st.subheader("人員列表")
 
+# ========== 人員與別名（popover 內容） ==========
+
+with people_box:
     if persons:
         for p in persons:
             with st.expander(p["name"]):
@@ -124,13 +129,13 @@ with st.sidebar:
                 )
                 if st.button("更新別名", key=f"update_alias_{p['id']}"):
                     db.update_person_aliases(p["id"], new_aliases)
-                    st.success("已更新")
+                    st.toast("已更新", icon="✅")
                     st.rerun()
 
                 # 刪除人員
                 if st.button("🗑️ 刪除人員", key=f"delete_person_{p['id']}"):
                     db.delete_person(p["id"])
-                    st.warning(f"已刪除：{p['name']}")
+                    st.toast(f"已刪除：{p['name']}", icon="🗑️")
                     st.rerun()
     else:
         st.info("尚無人員資料")
@@ -138,14 +143,14 @@ with st.sidebar:
     st.divider()
 
     # 快速新增人員
-    st.subheader("快速新增人員")
+    st.write("**快速新增人員**")
     quick_name = st.text_input("姓名", key="quick_add_name")
     quick_aliases = st.text_input("別名（選填）", key="quick_add_aliases")
     if st.button("新增", key="quick_add_btn"):
         if quick_name:
             try:
                 db.add_person(quick_name, quick_aliases)
-                st.success(f"已新增：{quick_name}")
+                st.toast(f"已新增：{quick_name}", icon="✅")
                 st.rerun()
             except Exception as e:
                 st.error(f"新增失敗：{e}")

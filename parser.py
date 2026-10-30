@@ -69,8 +69,8 @@ class ExpenseParser:
     # 類別行：含有 ： 或 :
     CATEGORY_PATTERN = re.compile(r"^(.+?)[：:](.*)$")
 
-    # 類別帶次數：類別*數字
-    CATEGORY_QUANTITY_PATTERN = re.compile(r"^(.+?)\*(\d+(?:\.\d+)?)$")
+    # 類別帶次數：類別*數字 或 類別數字（星號可省略）
+    CATEGORY_QUANTITY_PATTERN = re.compile(r"^(.+?)\*?(\d+(?:\.\d+)?)$")
 
     # 人名帶金額：人名+數字 或 人名＋數字
     PERSON_AMOUNT_PATTERN = re.compile(r"^(.+?)[+＋](\d+)$")

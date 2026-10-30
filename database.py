@@ -64,6 +64,14 @@ def init_db() -> None:
         )
     """)
 
+    # persons.active 欄位 migration（舊 DB 若已存在則忽略）
+    # 只有在這次 ALTER 是真的新增欄位時才執行一次性初始設定，避免每次啟動覆蓋掉之後手動的 active 切換
+    try:
+        cursor.execute("ALTER TABLE persons ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+        cursor.execute("UPDATE persons SET active = 0 WHERE name = '崴崴'")
+    except Exception:
+        pass
+
     # category_prices 類別單價
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS category_prices (
@@ -93,6 +101,16 @@ def init_db() -> None:
             raw_text TEXT NOT NULL,
             source_line TEXT NOT NULL,
             date TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+
+    # raw_inputs 原文（手機傳來的原始文字，原封不動保存）
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS raw_inputs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text TEXT NOT NULL,
+            source TEXT NOT NULL,
             created_at TEXT NOT NULL
         )
     """)
@@ -180,7 +198,7 @@ def get_all_persons() -> list[dict]:
     """取得所有人員（按名稱排序）"""
     with db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, name, aliases FROM persons ORDER BY name")
+        cursor.execute("SELECT id, name, aliases, active FROM persons ORDER BY name")
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
 
@@ -225,6 +243,15 @@ def update_person_aliases(person_id: int, aliases: str) -> bool:
     with db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("UPDATE persons SET aliases = ? WHERE id = ?", (aliases.strip(), person_id))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def set_person_active(person_id: int, active: bool) -> bool:
+    """設定人員啟用狀態"""
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE persons SET active = ? WHERE id = ?", (1 if active else 0, person_id))
         conn.commit()
         return cursor.rowcount > 0
 
@@ -474,6 +501,20 @@ def get_dates_with_data(year: int, month: int) -> set[int]:
         return {row["day"] for row in rows}
 
 
+def get_daily_totals(year: int, month: int) -> dict[int, float]:
+    """取得指定年月每天的支出合計（日期數字 -> 金額；只有備忘的日子金額為 0）"""
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT CAST(substr(date, 9, 2) AS INTEGER) AS day, SUM(amount * quantity) AS total
+               FROM expenses
+               WHERE substr(date, 1, 4) = ? AND CAST(substr(date, 6, 2) AS INTEGER) = ?
+               GROUP BY day""",
+            (str(year), month),
+        )
+        return {row["day"]: row["total"] or 0 for row in cursor.fetchall()}
+
+
 def get_expenses_by_date(date: str) -> list[dict]:
     """取得指定日期的所有支出（按類別、人員排序）"""
     with db_connection() as conn:
@@ -662,6 +703,41 @@ def get_memo_person_mappings() -> dict[str, str]:
         cursor = conn.cursor()
         cursor.execute("SELECT keyword, person FROM memo_person_mapping")
         return {row["keyword"]: row["person"] for row in cursor.fetchall()}
+
+
+def add_raw_input(text: str, source: str = "talker", created_at: Optional[str] = None) -> int:
+    """保存一份原始輸入文字（原封不動，不做 strip）
+
+    Args:
+        text: 原文
+        source: 來源（如 talker＝手機傳來）
+        created_at: ISO 時間字串，預設為現在
+
+    Returns:
+        新增的 ID；空白文字回傳 -1
+    """
+    if not text or not text.strip():
+        return -1
+
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO raw_inputs (text, source, created_at) VALUES (?, ?, ?)",
+            (text, source, created_at or datetime.now().isoformat()),
+        )
+        conn.commit()
+        return cursor.lastrowid
+
+
+def get_recent_raw_inputs(limit: int = 20) -> list[dict]:
+    """取得最近的原始輸入（新的在前）"""
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, text, source, created_at FROM raw_inputs ORDER BY id DESC LIMIT ?",
+            (limit,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
 
 
 def add_memo(date: str, content: str, person: Optional[str] = None) -> int:

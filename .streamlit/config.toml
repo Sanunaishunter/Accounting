@@ -1,16 +1,17 @@
 [theme]
-font = "sans serif"
-baseRadius = "0.6rem"
-
-# 淺色／深色各自設定，沒有指定 base 時會跟隨系統
-[theme.light]
-primaryColor = "#4F6BED"
-
-[theme.dark]
-primaryColor = "#6D84F7"
+base = "light"
+primaryColor = "#1E2A38"
+backgroundColor = "#FBFCF9"
+secondaryBackgroundColor = "#EDF5EF"
+textColor = "#1E2A38"
+borderColor = "#D6DED8"
+font = "sans-serif"
+baseRadius = "0.4rem"
 
 [client]
 toolbarMode = "viewer"
+# 導覽改放頁面頂端（ui.py 的 top_nav），不用側邊欄
+showSidebarNavigation = false
 
 [browser]
 gatherUsageStats = false
