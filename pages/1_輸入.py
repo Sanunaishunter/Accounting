@@ -73,14 +73,30 @@ def load_day(date_str: str, year: int, month: int, day: int, header: str) -> Non
     st.session_state[f"snap_{date_str}"] = raw
     st.session_state[f"src_{date_str}"] = source
     st.session_state[f"saved_{date_str}"] = bool(saved)
+    st.session_state[f"reviewed_{date_str}"] = bool(saved and saved["reviewed"])
+
+
+def toggle_review(date_str: str, header: str) -> None:
+    """「閱」章 callback：沒蓋就儲存並蓋章；已經蓋了就收回章（資料不動）"""
+    if st.session_state[f"reviewed_{date_str}"]:
+        db.set_day_reviewed(date_str, False)
+        st.toast(f"{header} 收回閱章", icon="↩️")
+    else:
+        try:
+            save_day(date_str, st.session_state[f"raw_{date_str}"], st.session_state[f"magic_{date_str}"], True)
+        except Exception as e:
+            st.toast(f"儲存失敗：{e}", icon="⚠️")
+            return
+        st.toast(f"{header} 閱", icon="🈶")
+    forget_day(date_str)
 
 
 def forget_day(date_str: str) -> None:
-    for prefix in ("raw", "magic", "res", "snap", "src", "saved"):
+    for prefix in ("raw", "magic", "res", "snap", "src", "saved", "reviewed"):
         st.session_state.pop(f"{prefix}_{date_str}", None)
 
 
-def save_day(date_str: str, raw: str, magic: str) -> dict:
+def save_day(date_str: str, raw: str, magic: str, reviewed: bool | None = None) -> dict:
     """儲存：用「魔法整理後」（空的話用原始資料）取代這天已入帳的資料，並記下兩邊的文字"""
     text = magic if magic.strip() else raw
     parsed = parse_accounting_text(text, target_date=date_str)
@@ -98,7 +114,7 @@ def save_day(date_str: str, raw: str, magic: str) -> dict:
     for memo in parsed.memos:
         db.add_memo(memo.date, memo.content, memo.person)
         result["memo"] += 1
-    db.save_day_input(date_str, raw, magic)
+    db.save_day_input(date_str, raw, magic, reviewed)
     return result
 
 
@@ -136,8 +152,8 @@ else:
 month_days = calendar.Calendar(firstweekday=0).monthdayscalendar(year, month)
 dates_with_data = db.get_dates_with_data(year, month)
 daily_totals = db.get_daily_totals(year, month)
-saved_days = db.get_day_input_days(year, month)
-waiting_days = sorted(set(raw_input_days(year, month)) - saved_days)  # 有原始資料、還沒校對存檔的日子
+reviewed_days = db.get_reviewed_days(year, month)
+waiting_days = sorted(set(raw_input_days(year, month)) - reviewed_days)  # 有原始資料、還沒蓋閱章的日子
 
 with cal_area:
     with st.container(key="calwrap"):
@@ -162,18 +178,18 @@ with cal_area:
             '<div class="cal-legend"><span><i style="background:var(--wash)"></i>已入帳</span>'
             '<span><i style="border-radius:50%;border-color:var(--red)"></i>待校對</span>'
             '<span><i style="border-radius:50%;border:2px solid var(--red)"></i>目前這天</span>'
-            '<span>✓ 已校對存檔</span></div>'
+            '<span>✓ 已閱</span></div>'
             f'<div class="cal-total"><span>{month} 月已入帳 {len(dates_with_data)} 天{waiting_note}</span>'
             f'<b>${sum(daily_totals.values()):,.0f}</b></div>'
         )
 
-# 月曆格子的狀態樣式（依資料動態產生）：綠底＝已入帳、紅點＝待校對、✓＝已校對存檔、紅圈＝目前這天
+# 月曆格子的狀態樣式（依資料動態產生）：綠底＝已入帳、紅點＝待校對、✓＝已閱、紅圈＝目前這天
 _css = "".join(f".st-key-day_{d} button{{background:var(--wash)!important;border-color:var(--grid)!important}}"
                for d in dates_with_data)
 _css += "".join(f".st-key-day_{d} button::after{{content:'';position:absolute;right:8px;top:8px;width:7px;height:7px;"
                 f"border-radius:50%;border:1.5px solid var(--red)}}" for d in waiting_days)
 _css += "".join(f".st-key-day_{d} button::after{{content:'✓';position:absolute;right:7px;top:3px;font-size:.8rem;"
-                f"font-weight:700;color:var(--green)}}" for d in saved_days)
+                f"font-weight:700;color:var(--green)}}" for d in reviewed_days)
 if st.session_state.selected_date:
     _css += (f".st-key-day_{st.session_state.selected_date} button{{background:#fff!important;"
              f"border:2px solid var(--red)!important;border-radius:46% 54% 50% 50% / 55% 45% 55% 45%!important}}")
@@ -204,11 +220,13 @@ with main_area:
         magic_now = st.session_state.get(f"magic_{date_str}", "")
         result = st.session_state.get(f"res_{date_str}")
         saved = st.session_state[f"saved_{date_str}"]
+        reviewed = st.session_state[f"reviewed_{date_str}"]
         source = st.session_state[f"src_{date_str}"]
         stale = bool(magic_now.strip()) and st.session_state.get(f"snap_{date_str}") != raw_now
 
         # 標題＋狀態
-        state_pill = pill("✓ 已校對存檔", "ok") if saved else pill("尚未存檔", "warn")
+        state_pill = (pill("✓ 已閱", "ok") if reviewed
+                      else pill("已存檔・未閱", "warn") if saved else pill("尚未存檔", "warn"))
         st.html(
             f'<div class="day-title">{month}月{day}日<small>星期{weekday}</small>'
             f'{state_pill}{pill(source, "neutral")}</div>'
@@ -229,13 +247,21 @@ with main_area:
         out_badge = (stamp("已整理") if result is not None and result.ok and magic_now.strip() and not stale
                      else pill(f"{n_marks} 處修改" if n_marks else "可手動修改", "accent"))
 
+        raw_text_now = raw_now
         left, right = st.columns(2)
         with left:
             pane_label("原始資料", pill("可手動修改", "neutral"))
             raw_text = st.text_area("原始資料", key=f"raw_{date_str}", label_visibility="collapsed", height=360,
                                     placeholder="這天沒有找到原始資料，可以直接貼上或手打")
         with right:
-            pane_label("魔法整理後", out_badge)
+            # 標題列：魔法整理後 ……… 已整理（印章）＋ 閱（按下去蓋章）
+            with st.container(horizontal=True, vertical_alignment="center", key="pane_head"):
+                st.html('<span class="pane-label"><span class="t">魔法整理後</span></span>')
+                st.space("stretch")
+                st.html(out_badge)
+                st.button("閱", key="yue_on" if reviewed else "yue_off", on_click=toggle_review,
+                          args=(date_str, header), disabled=not (raw_text_now.strip() or magic_now.strip()),
+                          help="收回閱章（資料不動）" if reviewed else "校對完了：儲存並蓋上「閱」章")
             magic_text = st.text_area("魔法整理後", key=f"magic_{date_str}", label_visibility="collapsed", height=360,
                                       placeholder="按「✎ 來點魔法」，整理後的文字會出現在這裡")
 
@@ -296,11 +322,11 @@ with main_area:
         # ===== 動作 =====
         def do_save(advance: bool) -> None:
             try:
-                res = save_day(date_str, raw_text, magic_text)
+                res = save_day(date_str, raw_text, magic_text, True if advance else None)
             except Exception as e:
                 st.error(f"儲存失敗：{e}")
                 return
-            msg = f"{header} 已儲存：{res['success']} 筆支出、{res['memo']} 筆備忘"
+            msg = f"{header} {'閱，' if advance else ''}已儲存：{res['success']} 筆支出、{res['memo']} 筆備忘"
             if res["pending"]:
                 msg += f"，{res['pending']} 筆待審核"
             forget_day(date_str)

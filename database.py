@@ -125,6 +125,12 @@ def init_db() -> None:
         )
     """)
 
+    # day_inputs.reviewed：蓋過「閱」章（人工校對完成）；舊 DB 沒有這欄就補上
+    try:
+        cursor.execute("ALTER TABLE day_inputs ADD COLUMN reviewed INTEGER NOT NULL DEFAULT 0")
+    except Exception:
+        pass
+
     # memos 備忘
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS memos (
@@ -755,32 +761,46 @@ def get_day_input(date: str) -> Optional[dict]:
     with db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT date, raw_text, magic_text, updated_at FROM day_inputs WHERE date = ?", (date,)
+            "SELECT date, raw_text, magic_text, reviewed, updated_at FROM day_inputs WHERE date = ?", (date,)
         )
         row = cursor.fetchone()
         return dict(row) if row else None
 
 
-def save_day_input(date: str, raw_text: str, magic_text: str) -> None:
-    """儲存（或覆蓋）某天的原始資料與魔法整理後的資料"""
+def save_day_input(date: str, raw_text: str, magic_text: str, reviewed: Optional[bool] = None) -> None:
+    """儲存（或覆蓋）某天的原始資料與魔法整理後的資料
+
+    reviewed：True／False 會設定「閱」章；None 表示不動（新資料預設未閱）
+    """
     with db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            """INSERT INTO day_inputs (date, raw_text, magic_text, updated_at) VALUES (?, ?, ?, ?)
+            """INSERT INTO day_inputs (date, raw_text, magic_text, reviewed, updated_at) VALUES (?, ?, ?, ?, ?)
                ON CONFLICT(date) DO UPDATE SET raw_text = excluded.raw_text,
-                   magic_text = excluded.magic_text, updated_at = excluded.updated_at""",
-            (date, raw_text, magic_text, datetime.now().isoformat()),
+                   magic_text = excluded.magic_text, updated_at = excluded.updated_at,
+                   reviewed = CASE WHEN ? IS NULL THEN day_inputs.reviewed ELSE excluded.reviewed END""",
+            (date, raw_text, magic_text, 1 if reviewed else 0, datetime.now().isoformat(),
+             None if reviewed is None else 1),
         )
         conn.commit()
 
 
-def get_day_input_days(year: int, month: int) -> set[int]:
-    """取得指定年月已儲存（校對過）的日期數字集合"""
+def set_day_reviewed(date: str, reviewed: bool) -> bool:
+    """只設定某天有沒有蓋「閱」章（該天要先有儲存過的資料）"""
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE day_inputs SET reviewed = ? WHERE date = ?", (1 if reviewed else 0, date))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def get_reviewed_days(year: int, month: int) -> set[int]:
+    """取得指定年月蓋過「閱」章的日期數字集合"""
     with db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
             """SELECT CAST(substr(date, 9, 2) AS INTEGER) AS day FROM day_inputs
-               WHERE substr(date, 1, 4) = ? AND CAST(substr(date, 6, 2) AS INTEGER) = ?""",
+               WHERE reviewed = 1 AND substr(date, 1, 4) = ? AND CAST(substr(date, 6, 2) AS INTEGER) = ?""",
             (str(year), month),
         )
         return {row["day"] for row in cursor.fetchall()}

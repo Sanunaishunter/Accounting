@@ -125,7 +125,7 @@ button:disabled p {{ color: var(--ink2) !important; }}
 .pill-accent {{ background: rgba(210,59,46,.1); color: var(--red); border-color: rgba(210,59,46,.35); }}
 .pill-ok {{ background: rgba(47,125,91,.12); color: var(--green); border-color: rgba(47,125,91,.35); }}
 .pill-warn {{ background: rgba(185,116,31,.12); color: var(--amber); border-color: rgba(185,116,31,.4); }}
-.pane-label {{ display: flex; align-items: center; justify-content: space-between; margin: 0 0 .35rem; min-height: 1.6rem; }}
+.pane-label {{ display: flex; align-items: center; justify-content: space-between; margin: 0 0 .35rem; min-height: 2.6rem; }}
 .pane-label span.t {{ font-size: .88rem; font-weight: 700; }}
 .stamp {{ display: inline-block; border: 2px solid var(--red); color: var(--red); border-radius: 4px; padding: 0 .55rem; font-family: var(--ming); font-weight: 700; font-size: .9rem; letter-spacing: .1em; transform: rotate(-6deg); }}
 .day-head {{ display: flex; align-items: center; gap: .7rem; margin-bottom: .55rem; }}
@@ -153,6 +153,21 @@ button:disabled p {{ color: var(--ink2) !important; }}
 .empty .ic {{ font-size: 2rem; }}
 .empty .tt {{ font-family: var(--ming); font-weight: 700; margin: .45rem 0 .2rem; }}
 .empty .ds {{ color: var(--ink2); font-size: .9rem; }}
+
+/* ---- 閱章：像皇帝批奏摺，按下去蓋章 ---- */
+.st-key-pane_head {{ gap: .5rem !important; min-height: 2.6rem; }}
+.st-key-pane_head .pane-label {{ margin: 0; min-height: 0; }}
+.st-key-pane_head {{ margin-bottom: .35rem; }}
+.st-key-yue_off button, .st-key-yue_on button {{
+  width: 2.6rem; min-height: 2.6rem; height: 2.6rem; padding: 0; border: 2.5px solid var(--red) !important; border-radius: 5px;
+  background: transparent; color: var(--red) !important; transform: rotate(-8deg);
+  transition: transform .15s ease, background .15s ease;
+}}
+.st-key-yue_off button p, .st-key-yue_on button p {{ font-family: var(--ming); font-size: 1.5rem; font-weight: 700; color: var(--red) !important; line-height: 1; }}
+.st-key-yue_off button:hover:not(:disabled) {{ background: rgba(210,59,46,.1) !important; transform: rotate(-8deg) scale(1.08); }}
+.st-key-yue_on button {{ background: rgba(210,59,46,.14) !important; box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 3.5px rgba(210,59,46,.55); }}
+.st-key-yue_off button:disabled {{ border-color: var(--line) !important; background: transparent !important; }}
+.st-key-yue_off button:disabled p {{ color: var(--line) !important; }}
 
 /* ---- 批改紀錄：原稿 → 批改後 ---- */
 .marks {{ border: 1px solid var(--line); border-radius: 4px; background: #fff; padding: .55rem .9rem .6rem; margin: .7rem 0 .2rem; }}
