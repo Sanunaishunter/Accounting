@@ -1,10 +1,10 @@
 [theme]
 base = "light"
-primaryColor = "#1E2A38"
-backgroundColor = "#FBFCF9"
-secondaryBackgroundColor = "#EDF5EF"
-textColor = "#1E2A38"
-borderColor = "#D6DED8"
+primaryColor = "#9E1F16"
+backgroundColor = "#FFF8E2"
+secondaryBackgroundColor = "#F3E2A8"
+textColor = "#2B2118"
+borderColor = "#D8BF78"
 font = "sans-serif"
 baseRadius = "0.4rem"
 

@@ -163,21 +163,21 @@ def _save_recon_item(year: int, month: int, person: str, ikey: str, cb_key: str)
 
 _KAI = '"LXGW WenKai TC","AR PL UKai TW","BiauKai","Kaiti TC","KaiTi",serif'
 _REPORT_CSS = """\
-  .report { font-family: "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; font-variant-numeric: tabular-nums; font-size: 14px; padding: 1rem 1.25rem 1.1rem; background: #fff; border: 1px solid #D6DED8; border-radius: 4px; color: #1E2A38; max-width: 360px; }
-  .report .rp-month { color: #5E6D7C; font-size: 12.5px; }
-  .report .rp-name { font-family: KAI; font-size: 28px; line-height: 1.25; border-bottom: 1.5px solid #1E2A38; padding-bottom: 4px; margin-bottom: 4px; }
+  .report { font-family: "Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; font-variant-numeric: tabular-nums; font-size: 14px; padding: 1rem 1.25rem 1.1rem; background: #FFF8E2; border: 1px solid #D8BF78; border-radius: 4px; color: #2B2118; max-width: 360px; }
+  .report .rp-month { color: #6E5A42; font-size: 12.5px; }
+  .report .rp-name { font-family: KAI; font-size: 28px; line-height: 1.25; border-bottom: 1.5px solid #2B2118; padding-bottom: 4px; margin-bottom: 4px; }
   .report h3 { font-size: 15px; margin: 0 0 4px; }
   .report table { width: 100%; border-collapse: collapse; }
-  .report td { padding: 5px 6px; border: none; border-bottom: 1px solid #CDE2D6; }
-  .report td.label { color: #5E6D7C; }
-  .report .sym { text-align: right; width: 22px; color: #5E6D7C; }
+  .report td { padding: 5px 6px; border: none; border-bottom: 1px solid #E5D29A; }
+  .report td.label { color: #6E5A42; }
+  .report .sym { text-align: right; width: 22px; color: #6E5A42; }
   .report .amt { text-align: right; width: 84px; }
   .report .divider td { font-weight: 700; border-bottom: none; padding-top: 7px; }
-  .report .section-title { color: #5E6D7C; font-size: 12.5px; padding-top: 14px; border-bottom: none; }
-  .report .memo-date { width: 40px; color: #5E6D7C; white-space: nowrap; }
-  .report .memo-who { width: 48px; color: #5E6D7C; white-space: nowrap; }
+  .report .section-title { color: #6E5A42; font-size: 12.5px; padding-top: 14px; border-bottom: none; }
+  .report .memo-date { width: 40px; color: #6E5A42; white-space: nowrap; }
+  .report .memo-who { width: 48px; color: #6E5A42; white-space: nowrap; }
   .report .total-row td { font-weight: 700; font-size: 16px; padding-top: 8px; border-bottom: none; }
-  .report .total-row td.amt { border-bottom: 4px double #1E2A38; }
+  .report .total-row td.amt { border-bottom: 4px double #2B2118; }
   .tooltip-container { position: relative; display: inline-block; cursor: pointer; }
   .tooltip-container .tooltip-text { visibility: hidden; background-color: #1E2A38; color: #fff; text-align: left; border-radius: 4px; padding: 8px 12px; position: absolute; z-index: 1000; left: 105%; top: 50%; transform: translateY(-50%); white-space: nowrap; font-size: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
   .tooltip-container:hover .tooltip-text { visibility: visible; }""".replace("KAI", _KAI)

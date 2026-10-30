@@ -8,7 +8,8 @@ import database as db
 from dayinput import find_raw, raw_input_days
 from normalizer import DEFAULT_CATEGORIES, normalize_day
 from parser import ParseStatus, parse_accounting_text
-from ui import apply_theme, diff_marks, is_mobile, pane_label, pill, stamp
+from ui import (apply_theme, cn_date, cn_int, cn_year, diff_marks, edict_end, edict_head, edict_idle, is_mobile,
+                pane_label, pill, stamp)
 
 
 st.set_page_config(page_title="輸入記帳", page_icon="📝", layout="wide")
@@ -157,11 +158,13 @@ waiting_days = sorted(set(raw_input_days(year, month)) - reviewed_days)  # 有�
 
 with cal_area:
     with st.container(key="calwrap"):
-        st.html(f'<div class="cal-month">{year} 年 {month} 月</div>')
+        waiting_note = f"・待批閱 {len(waiting_days)} 天" if waiting_days else ""
+        st.html(f'<div class="cal-month">{cn_year(year)}　{cn_int(month) + '月'}'
+                f'<small>已入帳 {len(dates_with_data)} 天{waiting_note}</small></div>')
         with st.container(key="calendar"):
             header_cols = st.columns(7)
             for i, day_name in enumerate(WEEKDAYS):
-                header_cols[i].html(f'<div style="text-align:center;font-size:.8rem;font-weight:650;opacity:.6;letter-spacing:.08em">{day_name}</div>')
+                header_cols[i].html(f'<div class="cal-wd">{day_name}</div>')
 
             for week in month_days:
                 cols = st.columns(7)
@@ -173,39 +176,41 @@ with cal_area:
                         amount = daily_totals.get(d, 0)
                         label = f"**{d}**  \n:gray[:small[{amount:,.0f}]]" if d in dates_with_data and amount else f"**{d}**"
                         st.button(label, key=f"day_{d}", width="stretch", on_click=select_day, args=(d,))
-        waiting_note = f"，待校對 {len(waiting_days)} 天" if waiting_days else ""
         st.html(
-            '<div class="cal-legend"><span><i style="background:var(--wash)"></i>已入帳</span>'
-            '<span><i style="border-radius:50%;border-color:var(--red)"></i>待校對</span>'
-            '<span><i style="border-radius:50%;border:2px solid var(--red)"></i>目前這天</span>'
-            '<span>✓ 已閱</span></div>'
-            f'<div class="cal-total"><span>{month} 月已入帳 {len(dates_with_data)} 天{waiting_note}</span>'
+            '<div class="cal-legend"><span><i style="background:rgba(232,199,99,.7)"></i>已入帳</span>'
+            '<span><i style="border-radius:50%;border:1.5px solid var(--red)"></i>待批閱</span>'
+            '<span><i style="background:var(--red)"></i>已閱</span>'
+            '<span><i style="outline:2px solid var(--red);outline-offset:-2px"></i>展開中</span></div>'
+            f'<div class="cal-total"><span>{cn_int(month) + '月'}已入帳合計</span>'
             f'<b>${sum(daily_totals.values()):,.0f}</b></div>'
         )
 
-# 月曆格子的狀態樣式（依資料動態產生）：綠底＝已入帳、紅點＝待校對、✓＝已閱、紅圈＝目前這天
-_css = "".join(f".st-key-day_{d} button{{background:var(--wash)!important;border-color:var(--grid)!important}}"
-               for d in dates_with_data)
-_css += "".join(f".st-key-day_{d} button::after{{content:'';position:absolute;right:8px;top:8px;width:7px;height:7px;"
+# 月曆格子的狀態樣式（依資料動態產生）：金底＝已入帳、紅圈＝待批閱、紅色「閱」章＝已閱、紅框＋摺角＝展開中
+_css = "".join(f".st-key-day_{d} button{{background:rgba(232,199,99,.5)!important}}" for d in dates_with_data)
+_css += "".join(f".st-key-day_{d} button::after{{content:'';position:absolute;right:8px;top:9px;width:7px;height:7px;"
                 f"border-radius:50%;border:1.5px solid var(--red)}}" for d in waiting_days)
-_css += "".join(f".st-key-day_{d} button::after{{content:'✓';position:absolute;right:7px;top:3px;font-size:.8rem;"
-                f"font-weight:700;color:var(--green)}}" for d in reviewed_days)
+_css += "".join(f".st-key-day_{d} button::after{{content:'閱';position:absolute;right:5px;top:5px;width:19px;height:19px;"
+                f"background:var(--red);color:#FFE9B0;font:700 13px/19px var(--kai);text-align:center;"
+                f"transform:rotate(6deg);border-radius:2px}}" for d in reviewed_days)
 if st.session_state.selected_date:
-    _css += (f".st-key-day_{st.session_state.selected_date} button{{background:#fff!important;"
-             f"border:2px solid var(--red)!important;border-radius:46% 54% 50% 50% / 55% 45% 55% 45%!important}}")
+    _css += (f".st-key-day_{st.session_state.selected_date} button{{background:var(--paper)!important;"
+             f"outline:2.5px solid var(--red);outline-offset:-2.5px;position:relative;z-index:2;"
+             f"box-shadow:0 4px 10px rgba(120,60,20,.35)}}"
+             f".st-key-day_{st.session_state.selected_date} button::before{{content:'';position:absolute;right:0;top:0;"
+             f"border-style:solid;border-width:0 18px 18px 0;border-color:transparent var(--red) transparent transparent}}")
 st.markdown(f"<style>{_css}</style>", unsafe_allow_html=True)
 
 
 # ========== 校對區：原始資料 | 魔法整理後 ==========
 
-with main_area:
+with main_area, st.container(key="scroll"):
     day = st.session_state.selected_date
+    edict_head()
 
     if not day:
-        hint = "點選" + ("上方" if MOBILE else "右側") + "月曆的日期，就會顯示那天的原始資料和魔法整理後的資料"
+        edict_idle()
         if waiting_days:
-            hint += f"。{month} 月還有 {len(waiting_days)} 天待校對（日期旁有紅點）"
-        st.caption(hint)
+            st.caption(f"{month} 月還有 {len(waiting_days)} 天待批閱（日期旁有紅圈）")
         if not MOBILE:
             toolbar.space("stretch")
             for label in ("✎ 來點魔法", "儲存", "儲存並看下一天", "取消"):
@@ -228,7 +233,7 @@ with main_area:
         state_pill = (pill("✓ 已閱", "ok") if reviewed
                       else pill("已存檔・未閱", "warn") if saved else pill("尚未存檔", "warn"))
         st.html(
-            f'<div class="day-title">{month}月{day}日<small>星期{weekday}</small>'
+            f'<div class="day-title">{cn_date(month, day)}<small>星期{weekday}</small>'
             f'{state_pill}{pill(source, "neutral")}</div>'
         )
 
@@ -250,13 +255,13 @@ with main_area:
         raw_text_now = raw_now
         left, right = st.columns(2)
         with left:
-            pane_label("原始資料", pill("可手動修改", "neutral"))
+            pane_label("原　奏", pill("可手動修改", "neutral"))
             raw_text = st.text_area("原始資料", key=f"raw_{date_str}", label_visibility="collapsed", height=360,
                                     placeholder="這天沒有找到原始資料，可以直接貼上或手打")
         with right:
             # 標題列：魔法整理後 ……… 已整理（印章）＋ 閱（按下去蓋章）
             with st.container(horizontal=True, vertical_alignment="center", key="pane_head"):
-                st.html('<span class="pane-label"><span class="t">魔法整理後</span></span>')
+                st.html('<span class="pane-label"><span class="t">魔法聖旨</span></span>')
                 st.space("stretch")
                 st.html(out_badge)
                 st.button("閱", key="yue_on" if reviewed else "yue_off", on_click=toggle_review,
@@ -318,6 +323,7 @@ with main_area:
                     st.text(f"• {exp['category']} | {exp['person']} | ${exp['amount']} × {exp['quantity']}")
                 for memo in existing_memos:
                     st.text(f"• 📝 {memo['content']}")
+        st.html(edict_end(year, month, day, reviewed))
 
         # ===== 動作 =====
         def do_save(advance: bool) -> None:
@@ -337,7 +343,7 @@ with main_area:
                 msg += f"；換到 {month}/{later[0]}"
             elif advance:
                 st.session_state.selected_date = None
-                msg += "；這個月沒有待校對的日子了"
+                msg += "；這個月沒有待批閱的日子了"
             st.toast(msg, icon="✅")
             st.rerun()
 
