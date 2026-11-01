@@ -27,14 +27,18 @@ if "selected_ym" not in st.session_state:
 def normalize_options() -> dict:
     """整理格式要用的已知人名（含別名、代理關鍵字）與類別"""
     names = []
+    aliases = {}
     for p in db.get_all_persons():
         names.append(p["name"])
         if p["aliases"]:
-            names.extend(a.strip() for a in p["aliases"].split(",") if a.strip())
+            for a in (a.strip() for a in p["aliases"].split(",")):
+                if a:
+                    names.append(a)
+                    aliases[a] = p["name"]
     persons = list(names)  # 真正的人員與別名（代理關鍵字不算），用來判斷「阿鵰點心+70」這類獨立行
     names.extend(db.get_person_proxy_mappings().keys())
     categories = list(dict.fromkeys([*DEFAULT_CATEGORIES, *db.get_all_category_prices().keys()]))
-    return {"names": names, "categories": categories, "persons": persons}
+    return {"names": names, "categories": categories, "persons": persons, "aliases": aliases}
 
 
 def select_day(day: int) -> None:
@@ -243,7 +247,7 @@ with main_area, st.container(key="scroll"):
             st.caption(f"{month} 月還有 {len(waiting_days)} 天待批閱（日期旁有紅圈）")
         if not MOBILE:
             toolbar.space("stretch")
-            for label in ("朕要你改", "朝假", "欽此", "取消"):
+            for label in ("朕要你改", "朝假", "欽此", "罷"):
                 toolbar.button(label, disabled=True, key=f"idle_{label}")
     else:
         date_str = f"{year}-{month:02d}-{day:02d}"
@@ -273,11 +277,11 @@ with main_area, st.container(key="scroll"):
         # 動作按鈕：桌面在頂端功能列右側，手機在標題下方
         if MOBILE:
             slot_magic, slot_off, slot_save, slot_cancel = st.container(key="actions").columns(4)
-            labels = ("朕要你改", "朝假", "欽此", "取消")
+            labels = ("朕要你改", "朝假", "欽此", "罷")
         else:
             toolbar.space("stretch")
             slot_magic = slot_off = slot_save = slot_cancel = toolbar
-            labels = ("朕要你改", "朝假", "欽此", "取消")
+            labels = ("朕要你改", "朝假", "欽此", "罷")
         btn_w = "stretch" if MOBILE else "content"
 
         # 批改紀錄用「目前」的兩邊文字比對（widget 狀態在腳本開跑前就已更新）
@@ -393,9 +397,11 @@ with main_area, st.container(key="scroll"):
             st.toast(msg, icon="✅")
             st.rerun()
 
-        if slot_save.button(labels[2], type="primary", width=btn_w, key="day_save"):
+        if slot_save.button(labels[2], type="primary", width=btn_w, key="day_save",
+                            help="儲存：用右邊的內容取代這天已入帳的資料（右邊留空就用左邊原始資料）"):
             do_save()
-        if slot_cancel.button(labels[3], width=btn_w, key="day_cancel"):
+        if slot_cancel.button(labels[3], width=btn_w, key="day_cancel",
+                              help="取消：這次改的都不存，關掉這天回到月曆"):
             forget_day(date_str)
             st.session_state.selected_date = None
             st.rerun()

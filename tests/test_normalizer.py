@@ -286,5 +286,72 @@ class PersonCategoryLines(unittest.TestCase):
         self.assertEqual(r.text, "10/22（四）\n⚠️傑森電費+$500⚠️")
 
 
+class EveryoneMeansDinnerPeople(unittest.TestCase):
+    """「全部」「每個人」＝當天晚餐有出現的人（備忘與電費都一樣）"""
+
+    PERSONS = ["傑森", "泰禎", "阿鵰", "紫緹", "紫提"]
+    NAMES = PERSONS + ["米媽媽"]
+    DAY = """9/8（二）
+⚠️全部的坤哥費用，還有洋蔥圈⚠️
+
+電費：無
+
+晚餐：傑森*2、阿鵰、紫緹
+晚餐 ：泰禎
+"""
+
+    def run_day(self, text):
+        return normalize_text(text, names=self.NAMES, persons=self.PERSONS, aliases={"紫提": "紫緹"})
+
+    def warn_lines(self, result):
+        return [l for l in result.text.split("\n") if l.startswith("⚠️")]
+
+    def test_everyone_expands_to_dinner_people(self):
+        r = self.run_day(self.DAY)
+        self.assertEqual(self.warn_lines(r), [
+            "⚠️傑森坤哥費用+$0000⚠️", "⚠️阿鵰坤哥費用+$0000⚠️", "⚠️紫緹坤哥費用+$0000⚠️",
+            "⚠️泰禎坤哥費用+$0000⚠️", "⚠️洋蔥圈+$0000⚠️",
+        ])
+        self.assertTrue(r.ok, r.problems)
+
+    def test_amount_is_per_person_and_check_passes(self):
+        r = self.run_day(self.DAY.replace("全部的坤哥費用，還有洋蔥圈", "全部電費+500"))
+        self.assertEqual(self.warn_lines(r), [f"⚠️{n}電費+$500⚠️" for n in ("傑森", "阿鵰", "紫緹", "泰禎")])
+        self.assertTrue(r.ok, r.problems)
+
+    def test_word_order_variants(self):
+        for raw, expected in [("電費每個人+$500", "電費+$500"), ("雞湯全部+$250", "雞湯+$250"), ("全部九月電費+$500", "九月電費+$500")]:
+            r = self.run_day(self.DAY.replace("全部的坤哥費用，還有洋蔥圈", raw))
+            self.assertEqual(self.warn_lines(r)[0], f"⚠️傑森{expected}⚠️", raw)
+            self.assertEqual(len(self.warn_lines(r)), 4, raw)
+            self.assertTrue(r.ok, (raw, r.problems))
+
+    def test_category_line_electricity_everyone(self):
+        day = self.DAY.replace("⚠️全部的坤哥費用，還有洋蔥圈⚠️\n", "").replace("電費：無", "電費：全部+500")
+        r = self.run_day(day)
+        self.assertEqual(self.warn_lines(r), [f"⚠️{n}電費+$500⚠️" for n in ("傑森", "阿鵰", "紫緹", "泰禎")])
+        self.assertIn("電費：\n", r.text + "\n")  # 類別行裡沒有別的人，只剩空的電費行
+        self.assertTrue(r.ok, r.problems)
+
+    def test_alias_in_dinner_line_uses_real_name(self):
+        r = self.run_day(self.DAY.replace("晚餐 ：泰禎", "晚餐 ：紫提"))
+        self.assertIn("⚠️紫緹坤哥費用+$0000⚠️", r.text)
+        self.assertEqual(r.text.count("坤哥費用"), 3)  # 傑森、阿鵰、紫緹（紫提與紫緹是同一人，不重複）
+
+    def test_no_dinner_people_leaves_it_alone_and_flags(self):
+        r = self.run_day("9/8（二）\n⚠️全部的坤哥費用⚠️\n\n晚餐：無\n")
+        self.assertEqual(self.warn_lines(r), ["⚠️全部的坤哥費用+$0000⚠️"])
+        self.assertTrue(any("找不到當天晚餐的人" in f for f in r.flags))
+
+    def test_item_with_a_name_is_not_expanded(self):
+        r = self.run_day("9/8（二）\n⚠️泰禎提拉米蘇全部+50⚠️\n\n晚餐：傑森、阿鵰\n")
+        self.assertEqual(self.warn_lines(r), ["⚠️泰禎提拉米蘇全部+$50⚠️"])
+
+    def test_idempotent(self):
+        once = self.run_day(self.DAY)
+        twice = self.run_day(once.text)
+        self.assertEqual(once.text, twice.text)
+
+
 if __name__ == "__main__":
     unittest.main()

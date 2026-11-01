@@ -41,6 +41,9 @@ _QTY_SUFFIX = re.compile(r"\*" + _NUM + r"\Z")
 _TRAILING_DIGITS = re.compile(r"[0-9]+\Z")
 _TRAILING_AMOUNT = re.compile(r"[+＋][$＄]?[0-9.+\-*/]+\Z")
 
+# 「全部」「每個人」…：指當天晚餐有出現的人（備忘裡有人加點的東西）
+_RE_EVERYONE = re.compile(r"(全部|每個人|每人|所有人|大家)(的)?")
+
 _RE_NORMALIZED = re.compile(r"(.*?)(\+[$＄]-?" + _NUM + r")")
 _RE_PLUS_EXPR = re.compile(r"(.*?)[+＋](" + _NUM + r"(?:[+\-*/]" + _NUM + r")+)")
 _RE_PLUS_AMOUNT = re.compile(r"(.*?)[+＋](" + _NUM + r")")
@@ -165,7 +168,9 @@ class NormalizeResult:
 
 
 class Normalizer:
-    def __init__(self, names=None, categories=None, persons=None):
+    def __init__(self, names=None, categories=None, persons=None, aliases=None):
+        self.aliases = dict(aliases or {})  # 別名 -> 正式人名（展開「全部」時寫正式人名）
+        self.dinner: list[str] = []  # 目前這天晚餐出現的人
         self.categories = list(categories) if categories else list(DEFAULT_CATEGORIES)
         # 只有真正的人員與別名；有給才會把「阿鵰點心+70」這類獨立行補成類別行
         self.persons = [p for p in dict.fromkeys(persons or []) if p]
@@ -192,6 +197,55 @@ class Normalizer:
         if token in self.names:
             return True
         return token.endswith("家") and token[:-1] in self.names
+
+    # ---- 「全部」＝當天晚餐有出現的人 ----
+
+    def dinner_by_date_line(self, lines: list[str]) -> dict[int, list[str]]:
+        """每個日期行 -> 那天晚餐行出現的人（依出現順序、不重複、別名換成正式人名）"""
+        pool = self.persons or self.names
+        result: dict[int, list[str]] = {}
+        cur: Optional[int] = None
+        for i, raw in enumerate(lines):
+            line = _trim(raw)
+            if _DATE_LINE.fullmatch(line):
+                cur = i
+                result[i] = []
+                continue
+            if cur is None or _is_warn_line(line):
+                continue
+            m = _CATEGORY_LINE.fullmatch(line)
+            if not m or _trim(_QTY_SUFFIX.sub("", _trim(m[1]), count=1)) != "晚餐":
+                continue
+            for item in (_trim(x) for x in re.split(r"[、,，]", m[3])):
+                core = item
+                while True:
+                    prev = core
+                    core = _TRAILING_AMOUNT.sub("", core, count=1)
+                    core = _QTY_SUFFIX.sub("", core, count=1)
+                    if core == prev:
+                        break
+                core = _TRAILING_DIGITS.sub("", core, count=1) or core
+                match = next((p for p in sorted(pool, key=len, reverse=True) if core.startswith(p)), "")
+                if match:
+                    name = self.aliases.get(match, match)
+                    if name not in result[cur]:
+                        result[cur].append(name)
+        return result
+
+    def expand_everyone(self, item: str) -> list[str]:
+        """「全部的坤哥費用+$0000」-> 當天晚餐每個人各一行；沒有「全部」或開頭已有人名就原樣回傳"""
+        m = _RE_EVERYONE.search(item)
+        if not m or self.leading_name(item):
+            return [item]
+        if not self.dinner:
+            self._flag(f"「{item}」的「{m[1]}」找不到當天晚餐的人，保留不展開")
+            return [item]
+        rest = item[:m.start()] + item[m.end():]
+        value = _sum_amounts(item)
+        if value:
+            self.derived.append({"kind": "expand", "item": item, "value": value * (len(self.dinner) - 1)})
+        self._flag(f"「{item}」的「{m[1]}」＝當天晚餐的人（{'、'.join(self.dinner)}），已展開，請確認")
+        return [name + rest for name in self.dinner]
 
     # ---- 單一品項：算出 名稱 + 金額 ----
 
@@ -269,7 +323,10 @@ class Normalizer:
         items = self.memo_items(content)
         if not items:
             return [f"{WARN}{sep}{content}{WARN}"]
-        return [f"{WARN}{sep}{self.format_item(it, name_suffix)}{WARN}" for it in items]
+        lines = []
+        for it in items:
+            lines.extend(self.expand_everyone(self.format_item(it, name_suffix)))
+        return [f"{WARN}{sep}{x}{WARN}" for x in lines]
 
     # ---- 類別行：把非人名項目拉出來 ----
 
@@ -325,6 +382,8 @@ class Normalizer:
         self.flags = []
         self.derived = []
         lines = re.sub(r"\r\n?", "\n", str(text)).split("\n")
+        dinner_map = self.dinner_by_date_line(lines)
+        self.dinner = []
         out: list[str] = []
         block: Optional[dict] = None  # {insert_at, prefix, fresh}
 
@@ -338,6 +397,7 @@ class Normalizer:
             line = _trim(raw_line)
 
             if _DATE_LINE.fullmatch(line):
+                self.dinner = dinner_map.get(line_no, [])
                 multi = re.search(r"[、,，]", line) is not None
                 block = {
                     "insert_at": len(out) + 1,
@@ -409,7 +469,7 @@ def _sum_amounts(text: str) -> float:
 
 def _cjk_chars(text: str) -> dict[str, None]:
     """依首次出現順序保留的字集合"""
-    return dict.fromkeys(_RE_CJK.findall(re.sub(r"還有|以及", "", text)))
+    return dict.fromkeys(_RE_CJK.findall(re.sub(r"還有|以及|(?:全部|每個人|每人|所有人|大家)的?", "", text)))
 
 
 def check(input_text: str, output: str, derived=None, categories=None) -> tuple[bool, list[str]]:
@@ -465,13 +525,15 @@ def check(input_text: str, output: str, derived=None, categories=None) -> tuple[
     return not problems, problems
 
 
-def normalize_text(text: str, names=None, categories=None, persons=None) -> NormalizeResult:
+def normalize_text(text: str, names=None, categories=None, persons=None, aliases=None) -> NormalizeResult:
     """整理記帳文字並自動檢查。
 
     names: 已知人名（含別名、代理關鍵字）；categories: 已知類別（會與預設類別合併使用者傳入的值）
-    persons: 只有真正的人員與別名；有給的話，「阿鵰點心+70」這類獨立行會補成「點心：阿鵰點心+70」
+    persons: 只有真正的人員與別名；有給的話，「阿鵰點心+70」這類獨立行會補成「點心：阿鵰點心+70」，
+             備忘裡的「全部」「每個人」也靠它找出當天晚餐的人
+    aliases: {別名: 正式人名}，展開「全部」時用正式人名
     """
-    n = Normalizer(names=names, categories=categories, persons=persons)
+    n = Normalizer(names=names, categories=categories, persons=persons, aliases=aliases)
     out, flags, derived = n.normalize(text)
     ok, problems = check(text, out, derived, n.categories)
     return NormalizeResult(text=out, flags=flags, derived=derived, ok=ok, problems=problems)
@@ -508,11 +570,11 @@ def split_days(text: str) -> list[dict]:
     return result
 
 
-def normalize_day(text: str, header: str, names=None, categories=None, persons=None) -> NormalizeResult:
+def normalize_day(text: str, header: str, names=None, categories=None, persons=None, aliases=None) -> NormalizeResult:
     """整理「單日」文字。文字沒有日期行時，暫時補上 header 讓整理器能運作，輸出再拿掉。"""
     first = next((_trim(l) for l in str(text).split("\n") if _trim(l)), "")
     if _DATE_LINE.fullmatch(first):
-        return normalize_text(text, names=names, categories=categories, persons=persons)
-    result = normalize_text(f"{header}\n{text}", names=names, categories=categories, persons=persons)
+        return normalize_text(text, names=names, categories=categories, persons=persons, aliases=aliases)
+    result = normalize_text(f"{header}\n{text}", names=names, categories=categories, persons=persons, aliases=aliases)
     result.text = result.text.split("\n", 1)[1] if "\n" in result.text else ""
     return result
