@@ -43,7 +43,7 @@ def select_day(day: int) -> None:
 
 
 def magic_day(date_str: str, header: str) -> None:
-    """「來點魔法」callback：原始資料 -> 魔法整理後"""
+    """「朕要你改」callback：原始資料 -> 魔法整理後"""
     result = normalize_day(st.session_state[f"raw_{date_str}"], header, **normalize_options())
     st.session_state[f"magic_{date_str}"] = result.text
     st.session_state[f"res_{date_str}"] = result
@@ -127,10 +127,6 @@ st.session_state.setdefault("ym_year", now.year)
 st.session_state.setdefault("ym_month", now.month)
 
 
-def pick_year(y: int) -> None:
-    st.session_state.ym_year = y
-
-
 def pick_month(m: int) -> None:
     st.session_state.ym_month = m
 
@@ -143,13 +139,9 @@ else:
     ym_host = toolbar
 
 with ym_host:
-    # 年份（農曆干支）一排；月份雅稱上下兩排、六個一排，放在年份旁邊
-    with st.container(key="ympick", horizontal=not MOBILE, vertical_alignment="center"):
-        with st.container(key="ym_year", horizontal=True):
-            for y in YEARS:
-                st.button(ganzhi_year(y), key=f"ym_y_{y}", on_click=pick_year, args=(y,),
-                          type="primary" if y == st.session_state.ym_year else "secondary",
-                          width="stretch" if MOBILE else "content")
+    # 年份（農曆干支）維持下拉選單；月份雅稱上下兩排、六個一排，放在年份旁邊
+    st.selectbox("年份", YEARS, format_func=ganzhi_year, key="ym_year", width="stretch" if MOBILE else 120)
+    with st.container(key="ympick"):
         with st.container(key="ym_months"):
             for r in range(2):
                 with st.container(horizontal=True, key=f"ym_row{r}"):
@@ -237,7 +229,7 @@ with main_area, st.container(key="scroll"):
             st.caption(f"{month} 月還有 {len(waiting_days)} 天待批閱（日期旁有紅圈）")
         if not MOBILE:
             toolbar.space("stretch")
-            for label in ("✎ 來點魔法", "儲存", "儲存並看下一天", "取消"):
+            for label in ("朕要你改", "欽此", "取消"):
                 toolbar.button(label, disabled=True, key=f"idle_{label}")
     else:
         date_str = f"{year}-{month:02d}-{day:02d}"
@@ -263,12 +255,12 @@ with main_area, st.container(key="scroll"):
 
         # 動作按鈕：桌面在頂端功能列右側，手機在標題下方
         if MOBILE:
-            slot_magic, slot_save, slot_next, slot_cancel = st.container(key="actions").columns(4)
-            labels = ("✎魔法", "儲存", "下一天", "取消")
+            slot_magic, slot_save, slot_cancel = st.container(key="actions").columns(3)
+            labels = ("朕要你改", "欽此", "取消")
         else:
             toolbar.space("stretch")
-            slot_magic = slot_save = slot_next = slot_cancel = toolbar
-            labels = ("✎ 來點魔法", "儲存", "儲存並看下一天", "取消")
+            slot_magic = slot_save = slot_cancel = toolbar
+            labels = ("朕要你改", "欽此", "取消")
         btn_w = "stretch" if MOBILE else "content"
 
         # 批改紀錄用「目前」的兩邊文字比對（widget 狀態在腳本開跑前就已更新）
@@ -292,7 +284,7 @@ with main_area, st.container(key="scroll"):
                           args=(date_str, header), disabled=not (raw_text_now.strip() or magic_now.strip()),
                           help="收回閱章（資料不動）" if reviewed else "校對完了：儲存並蓋上「閱」章")
             magic_text = st.text_area("魔法整理後", key=f"magic_{date_str}", label_visibility="collapsed", height=360,
-                                      placeholder="按「✎ 來點魔法」，整理後的文字會出現在這裡")
+                                      placeholder="按「朕要你改」，整理後的文字會出現在這裡")
 
         slot_magic.button(labels[0], on_click=magic_day, args=(date_str, header), disabled=not raw_text.strip(),
                           key=f"magic_btn_{date_str}", width=btn_w,
@@ -300,7 +292,7 @@ with main_area, st.container(key="scroll"):
 
         # 校對輔助：魔法檢查結果 → 批改紀錄
         if stale:
-            st.html(pill("原始資料已修改，右邊是舊的整理結果，請重新「來點魔法」", "warn"))
+            st.html(pill("原始資料已修改，右邊是舊的整理結果，請重新按「朕要你改」", "warn"))
         elif result is not None and magic_text.strip():
             if result.ok:
                 st.html(pill("✓ 自動檢查通過", "ok"))
@@ -367,32 +359,22 @@ with main_area, st.container(key="scroll"):
         st.html(edict_end(year, month, day, reviewed))
 
         # ===== 動作 =====
-        def do_save(advance: bool) -> None:
+        def do_save() -> None:
             try:
-                res = save_day(date_str, raw_text, magic_text, True if advance else None)
+                res = save_day(date_str, raw_text, magic_text)
             except Exception as e:
                 st.error(f"儲存失敗：{e}")
                 return
-            msg = f"{header} {'閱，' if advance else ''}已儲存：{res['success']} 筆支出、{res['memo']} 筆備忘"
+            msg = f"{header} 欽此，已儲存：{res['success']} 筆支出、{res['memo']} 筆備忘"
             if res["pending"]:
                 msg += f"，{res['pending']} 筆待審核"
             forget_day(date_str)
-            others = [d for d in waiting_days if d != day]
-            later = [d for d in others if d > day] or others
-            if advance and later:
-                st.session_state.selected_date = later[0]
-                msg += f"；換到 {month}/{later[0]}"
-            elif advance:
-                st.session_state.selected_date = None
-                msg += "；這個月沒有待批閱的日子了"
             st.toast(msg, icon="✅")
             st.rerun()
 
         if slot_save.button(labels[1], type="primary", width=btn_w, key="day_save"):
-            do_save(advance=False)
-        if slot_next.button(labels[2], width=btn_w, key="day_next"):
-            do_save(advance=True)
-        if slot_cancel.button(labels[3], width=btn_w, key="day_cancel"):
+            do_save()
+        if slot_cancel.button(labels[2], width=btn_w, key="day_cancel"):
             forget_day(date_str)
             st.session_state.selected_date = None
             st.rerun()

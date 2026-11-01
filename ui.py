@@ -131,24 +131,20 @@ hr {{ border-color: var(--line) !important; margin: 1.6rem 0 !important; opacity
 .st-key-toolbar button[data-testid="stBaseButton-primary"]:not(:disabled) p {{ color: #3A1E0C; }}
 .st-key-toolbar button[data-testid="stBaseButton-primary"]:hover:not(:disabled) {{ background: linear-gradient(180deg, #F8E48F, #E0B646) !important; color: #3A1E0C !important; }}
 /* 年月按鈕列：年份一排、月份上下兩排（六個一排），不換行 */
-.st-key-ym_year [data-testid="stHorizontalBlock"], .st-key-ym_year, [class*="st-key-ym_row"] {{ flex-wrap: nowrap !important; gap: .3rem !important; }}
+[class*="st-key-ym_row"] {{ flex-wrap: nowrap !important; gap: .3rem !important; }}
 .st-key-ympick {{ gap: .3rem !important; }}
 .st-key-toolbar .st-key-ympick {{ flex: 0 0 auto !important; width: max-content !important; gap: 1.1rem !important; }}
-.st-key-toolbar .st-key-ym_year, .st-key-toolbar .st-key-ym_months, .st-key-toolbar [class*="st-key-ym_row"] {{ flex: 0 0 auto !important; width: max-content !important; }}
+.st-key-toolbar .st-key-ym_months, .st-key-toolbar [class*="st-key-ym_row"] {{ flex: 0 0 auto !important; width: max-content !important; }}
 .st-key-toolbar .st-key-ym_months {{ gap: .35rem !important; }}
-.st-key-toolbar :is(div):has(> .st-key-ympick), .st-key-toolbar :is(div):has(> .st-key-ym_year), .st-key-toolbar :is(div):has(> .st-key-ym_months), .st-key-toolbar :is(div):has(> [class*="st-key-ym_row"]) {{ width: max-content !important; max-width: none !important; flex: 0 0 auto !important; }}
+.st-key-toolbar :is(div):has(> .st-key-ympick), .st-key-toolbar :is(div):has(> .st-key-ym_months), .st-key-toolbar :is(div):has(> [class*="st-key-ym_row"]) {{ width: max-content !important; max-width: none !important; flex: 0 0 auto !important; }}
 .st-key-ympick [data-testid="stElementContainer"] {{ min-width: 0; }}
 .st-key-ympick button {{ min-height: 2rem; padding: .1rem .55rem; white-space: nowrap; }}
 .st-key-ympick button p {{ font-family: var(--kai); font-size: .95rem; letter-spacing: .08em; }}
-.st-key-ym_year button p {{ font-size: 1.05rem; font-weight: 700; }}
-.st-key-ymbar [data-testid="stElementContainer"] {{ flex: 1 1 0; min-width: 0; }}
-.st-key-ymbar .st-key-ym_year {{ margin-bottom: .3rem; }}
+.st-key-ymbar [class*="st-key-ym_row"] > [data-testid="stElementContainer"] {{ flex: 1 1 0; min-width: 0; }}
 .st-key-ymbar .st-key-ympick button {{ width: 100%; padding: .1rem 0; }}
 .st-key-toolbar [class*="st-key-ym_"] button:not([data-testid="stBaseButton-primary"]) {{ background: transparent; border-color: rgba(243,216,121,.55); color: #FFE9B0; }}
 .st-key-toolbar [class*="st-key-ym_"] button:not([data-testid="stBaseButton-primary"]) p {{ color: #FFE9B0; }}
 .st-key-toolbar [class*="st-key-ym_"] button:not([data-testid="stBaseButton-primary"]):hover {{ background: rgba(255,233,176,.15) !important; border-color: #FFE9B0 !important; }}
-.st-key-toolbar .st-key-day_next button {{ background: #FFF3CC; border-color: #FFF3CC; color: var(--red2); }}
-.st-key-toolbar .st-key-day_next button:hover:not(:disabled) {{ background: #fff !important; color: var(--red2); }}
 .st-key-toolbar .st-key-day_cancel button {{ background: transparent; border-color: transparent; color: #EBC9A0; }}
 .st-key-toolbar .st-key-day_cancel button:hover:not(:disabled) {{ background: rgba(255,233,176,.12); color: #FFE9B0; }}
 [data-testid="stMainBlockContainer"]:has(.st-key-scroll) .st-key-toolbar button:disabled {{ background: transparent !important; border-color: rgba(232,199,99,.35) !important; }}
