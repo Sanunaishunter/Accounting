@@ -124,9 +124,9 @@ hr {{ border-color: var(--line) !important; margin: 1.6rem 0 !important; opacity
 [data-testid="stMainBlockContainer"]:has(.st-key-scroll) .st-key-toolbar [data-testid="stSelectbox"] [data-baseweb="select"] > div {{ background: #FFF3CC; border: 1.5px solid var(--gold2); border-radius: 5px; color: var(--ink); }}
 [data-testid="stMainBlockContainer"]:has(.st-key-scroll) .st-key-toolbar [data-testid="stSelectbox"] svg {{ color: var(--ink2); fill: var(--ink2); }}
 /* 綢帶上的按鈕 */
-.st-key-toolbar [class*="st-key-magic_btn"] button:not(:disabled) {{ background: transparent; border-color: var(--gold2); color: #FFE9B0; }}
-.st-key-toolbar [class*="st-key-magic_btn"] button:not(:disabled) p {{ color: #FFE9B0; }}
-.st-key-toolbar [class*="st-key-magic_btn"] button:not(:disabled):hover {{ background: rgba(255,233,176,.15) !important; border-color: #FFE9B0 !important; color: #FFE9B0 !important; }}
+.st-key-toolbar :is([class*="st-key-magic_btn"], [class*="st-key-off_btn"]) button:not(:disabled) {{ background: transparent; border-color: var(--gold2); color: #FFE9B0; }}
+.st-key-toolbar :is([class*="st-key-magic_btn"], [class*="st-key-off_btn"]) button:not(:disabled) p {{ color: #FFE9B0; }}
+.st-key-toolbar :is([class*="st-key-magic_btn"], [class*="st-key-off_btn"]) button:not(:disabled):hover {{ background: rgba(255,233,176,.15) !important; border-color: #FFE9B0 !important; color: #FFE9B0 !important; }}
 .st-key-toolbar button[data-testid="stBaseButton-primary"] {{ background: linear-gradient(180deg, #F3D879, #D5A93A); border-color: #F3D879; color: #3A1E0C; }}
 .st-key-toolbar button[data-testid="stBaseButton-primary"]:not(:disabled) p {{ color: #3A1E0C; }}
 .st-key-toolbar button[data-testid="stBaseButton-primary"]:hover:not(:disabled) {{ background: linear-gradient(180deg, #F8E48F, #E0B646) !important; color: #3A1E0C !important; }}
@@ -187,6 +187,10 @@ button:disabled p {{ color: var(--ink2) !important; }}
   border-radius: 3px;
 }}
 [data-testid="stTextArea"] textarea::placeholder {{ opacity: .45; }}
+/* 輸入頁的稿紙：依實際排版（含自動換行）撐到剛好看完全部內容，不出現捲軸 */
+[class*="st-key-raw_20"] [data-testid="stTextArea"], [class*="st-key-raw_20"] [data-testid="stTextAreaRootElement"],
+[class*="st-key-magic_20"] [data-testid="stTextArea"], [class*="st-key-magic_20"] [data-testid="stTextAreaRootElement"] {{ height: auto !important; max-height: none !important; }}
+[class*="st-key-raw_20"] textarea, [class*="st-key-magic_20"] textarea {{ field-sizing: content; height: auto !important; min-height: 8rem; max-height: none !important; overflow-y: hidden !important; resize: none !important; }}
 [class*="st-key-magic_20"] [data-testid="stTextAreaRootElement"] {{ background: #FFFAE8 !important; border: 3px double #B78A24 !important; }}
 [data-testid="stWidgetLabel"] p {{ font-weight: 600; font-size: .88rem; }}
 

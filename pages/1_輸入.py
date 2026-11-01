@@ -92,6 +92,14 @@ def toggle_review(date_str: str, header: str) -> None:
     forget_day(date_str)
 
 
+def toggle_day_off(date_str: str, header: str) -> None:
+    """「朝假」callback：標注（或收回）這天放假"""
+    year_, month_, day_ = (int(x) for x in date_str.split("-"))
+    off = day_ in db.get_day_off_days(year_, month_)
+    db.set_day_off(date_str, not off)
+    st.toast(f"{header} 收回朝假" if off else f"{header} 朝假，今日不上朝", icon="🏮" if not off else "↩️")
+
+
 def forget_day(date_str: str) -> None:
     for prefix in ("raw", "magic", "res", "snap", "src", "saved", "reviewed"):
         st.session_state.pop(f"{prefix}_{date_str}", None)
@@ -170,11 +178,12 @@ month_days = calendar.Calendar(firstweekday=0).monthdayscalendar(year, month)
 dates_with_data = db.get_dates_with_data(year, month)
 daily_totals = db.get_daily_totals(year, month)
 reviewed_days = db.get_reviewed_days(year, month)
-waiting_days = sorted(set(raw_input_days(year, month)) - reviewed_days)  # 有原始資料、還沒蓋閱章的日子
+off_days = db.get_day_off_days(year, month)  # 朝假：標注放假的日子
+waiting_days = sorted(set(raw_input_days(year, month)) - reviewed_days - off_days)  # 有原始資料、還沒蓋閱章、也不是朝假的日子
 
 with cal_area:
     with st.container(key="calwrap"):
-        waiting_note = f"・待批閱 {len(waiting_days)} 天" if waiting_days else ""
+        waiting_note = (f"・待批閱 {len(waiting_days)} 天" if waiting_days else "") + (f"・朝假 {len(off_days)} 天" if off_days else "")
         st.html(f'<div class="cal-month">{ganzhi_year(year)}　{cn_int(month) + '月'}'
                 f'<small>已入帳 {len(dates_with_data)} 天{waiting_note}</small></div>')
         with st.container(key="calendar"):
@@ -196,7 +205,8 @@ with cal_area:
             '<div class="cal-legend"><span><i style="background:rgba(232,199,99,.7)"></i>已入帳</span>'
             '<span><i style="border-radius:50%;border:1.5px solid var(--red)"></i>待批閱</span>'
             '<span><i style="background:var(--red)"></i>已閱</span>'
-            '<span><i style="outline:2px solid var(--red);outline-offset:-2px"></i>展開中</span></div>'
+            '<span><i style="outline:2px solid var(--red);outline-offset:-2px"></i>展開中</span>'
+            '<span><i style="background:#2F6B8A"></i>朝假</span></div>'
             f'<div class="cal-total"><span>{cn_int(month) + '月'}已入帳合計</span>'
             f'<b>${sum(daily_totals.values()):,.0f}</b></div>'
         )
@@ -208,6 +218,10 @@ _css += "".join(f".st-key-day_{d} button::after{{content:'';position:absolute;ri
 _css += "".join(f".st-key-day_{d} button::after{{content:'閱';position:absolute;right:5px;top:5px;width:19px;height:19px;"
                 f"background:var(--red);color:#FFE9B0;font:700 13px/19px var(--kai);text-align:center;"
                 f"transform:rotate(6deg);border-radius:2px}}" for d in reviewed_days)
+_css += "".join(f".st-key-day_{d} button{{background:rgba(110,150,175,.28)!important}}"
+                f".st-key-day_{d} button::after{{content:'假';position:absolute;right:5px;top:5px;width:19px;height:19px;"
+                f"background:#2F6B8A;color:#FFF3CC;font:700 13px/19px var(--kai);text-align:center;"
+                f"transform:rotate(-6deg);border-radius:2px}}" for d in off_days)
 if st.session_state.selected_date:
     _css += (f".st-key-day_{st.session_state.selected_date} button{{background:var(--paper)!important;"
              f"outline:2.5px solid var(--red);outline-offset:-2.5px;position:relative;z-index:2;"
@@ -229,7 +243,7 @@ with main_area, st.container(key="scroll"):
             st.caption(f"{month} 月還有 {len(waiting_days)} 天待批閱（日期旁有紅圈）")
         if not MOBILE:
             toolbar.space("stretch")
-            for label in ("朕要你改", "欽此", "取消"):
+            for label in ("朕要你改", "朝假", "欽此", "取消"):
                 toolbar.button(label, disabled=True, key=f"idle_{label}")
     else:
         date_str = f"{year}-{month:02d}-{day:02d}"
@@ -246,8 +260,11 @@ with main_area, st.container(key="scroll"):
         stale = bool(magic_now.strip()) and st.session_state.get(f"snap_{date_str}") != raw_now
 
         # 標題＋狀態
+        is_off = day in off_days
         state_pill = (pill("✓ 已閱", "ok") if reviewed
                       else pill("已存檔・未閱", "warn") if saved else pill("尚未存檔", "warn"))
+        if is_off:
+            state_pill += pill("朝假", "accent")
         st.html(
             f'<div class="day-title">{cn_date(month, day)}<small>星期{weekday}</small>'
             f'{state_pill}{pill(source, "neutral")}</div>'
@@ -255,12 +272,12 @@ with main_area, st.container(key="scroll"):
 
         # 動作按鈕：桌面在頂端功能列右側，手機在標題下方
         if MOBILE:
-            slot_magic, slot_save, slot_cancel = st.container(key="actions").columns(3)
-            labels = ("朕要你改", "欽此", "取消")
+            slot_magic, slot_off, slot_save, slot_cancel = st.container(key="actions").columns(4)
+            labels = ("朕要你改", "朝假", "欽此", "取消")
         else:
             toolbar.space("stretch")
-            slot_magic = slot_save = slot_cancel = toolbar
-            labels = ("朕要你改", "欽此", "取消")
+            slot_magic = slot_off = slot_save = slot_cancel = toolbar
+            labels = ("朕要你改", "朝假", "欽此", "取消")
         btn_w = "stretch" if MOBILE else "content"
 
         # 批改紀錄用「目前」的兩邊文字比對（widget 狀態在腳本開跑前就已更新）
@@ -272,23 +289,27 @@ with main_area, st.container(key="scroll"):
         left, right = st.columns(2)
         with left:
             pane_label("原　奏", pill("可手動修改", "neutral"))
-            raw_text = st.text_area("原始資料", key=f"raw_{date_str}", label_visibility="collapsed", height=360,
+            raw_text = st.text_area("原始資料", key=f"raw_{date_str}", label_visibility="collapsed", height="content",
                                     placeholder="這天沒有找到原始資料，可以直接貼上或手打")
         with right:
             # 標題列：魔法整理後 ……… 已整理（印章）＋ 閱（按下去蓋章）
             with st.container(horizontal=True, vertical_alignment="center", key="pane_head"):
-                st.html('<span class="pane-label"><span class="t">魔法聖旨</span></span>')
+                st.html('<span class="pane-label"><span class="t">啟稟皇上</span></span>')
                 st.space("stretch")
                 st.html(out_badge)
                 st.button("閱", key="yue_on" if reviewed else "yue_off", on_click=toggle_review,
                           args=(date_str, header), disabled=not (raw_text_now.strip() or magic_now.strip()),
                           help="收回閱章（資料不動）" if reviewed else "校對完了：儲存並蓋上「閱」章")
-            magic_text = st.text_area("魔法整理後", key=f"magic_{date_str}", label_visibility="collapsed", height=360,
+            magic_text = st.text_area("魔法整理後", key=f"magic_{date_str}", label_visibility="collapsed", height="content",
                                       placeholder="按「朕要你改」，整理後的文字會出現在這裡")
 
         slot_magic.button(labels[0], on_click=magic_day, args=(date_str, header), disabled=not raw_text.strip(),
                           key=f"magic_btn_{date_str}", width=btn_w,
                           help="把 ⚠️ 備忘整理成一品項一行（金額統一為 +$金額），並把類別行裡不是人名的項目拉成 ⚠️ 備忘")
+
+        slot_off.button("收回朝假" if is_off else labels[1], on_click=toggle_day_off, args=(date_str, header),
+                        key=f"off_btn_{date_str}", width=btn_w,
+                        help="這天放假、沒有帳要入：標在月曆上，不算待批閱" if not is_off else "取消這天的朝假標注")
 
         # 校對輔助：魔法檢查結果 → 批改紀錄
         if stale:
@@ -372,9 +393,9 @@ with main_area, st.container(key="scroll"):
             st.toast(msg, icon="✅")
             st.rerun()
 
-        if slot_save.button(labels[1], type="primary", width=btn_w, key="day_save"):
+        if slot_save.button(labels[2], type="primary", width=btn_w, key="day_save"):
             do_save()
-        if slot_cancel.button(labels[2], width=btn_w, key="day_cancel"):
+        if slot_cancel.button(labels[3], width=btn_w, key="day_cancel"):
             forget_day(date_str)
             st.session_state.selected_date = None
             st.rerun()

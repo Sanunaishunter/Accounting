@@ -131,6 +131,14 @@ def init_db() -> None:
     except Exception:
         pass
 
+    # day_off 朝假：標注那天放假（沒有帳可入，不算待批閱）
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS day_off (
+            date TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL
+        )
+    """)
+
     # memos 備忘
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS memos (
@@ -819,6 +827,32 @@ def get_reviewed_days(year: int, month: int) -> set[int]:
             (str(year), month),
         )
         return {row["day"] for row in cursor.fetchall()}
+
+
+def get_day_off_days(year: int, month: int) -> set[int]:
+    """取得指定年月標注「朝假」的日期數字集合"""
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT CAST(substr(date, 9, 2) AS INTEGER) AS day FROM day_off
+               WHERE substr(date, 1, 4) = ? AND CAST(substr(date, 6, 2) AS INTEGER) = ?""",
+            (str(year), month),
+        )
+        return {row["day"] for row in cursor.fetchall()}
+
+
+def set_day_off(date: str, off: bool) -> None:
+    """標注（或取消）某天朝假"""
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        if off:
+            cursor.execute(
+                "INSERT OR IGNORE INTO day_off (date, created_at) VALUES (?, ?)",
+                (date, datetime.now().isoformat()),
+            )
+        else:
+            cursor.execute("DELETE FROM day_off WHERE date = ?", (date,))
+        conn.commit()
 
 
 def add_memo(date: str, content: str, person: Optional[str] = None) -> int:

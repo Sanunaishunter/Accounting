@@ -34,5 +34,26 @@ class DeleteDayAll(unittest.TestCase):
         self.assertIsNotNone(db.get_day_input("2026-10-23"))
 
 
+class DayOff(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self._orig = db.DB_PATH
+        db.DB_PATH = Path(self._tmp.name) / "test.db"
+        db.init_db()
+
+    def tearDown(self):
+        db.DB_PATH = self._orig
+        self._tmp.cleanup()
+
+    def test_mark_and_unmark(self):
+        db.set_day_off("2026-09-05", True)
+        db.set_day_off("2026-09-05", True)  # 重複標注不會出錯
+        db.set_day_off("2026-10-05", True)
+        self.assertEqual(db.get_day_off_days(2026, 9), {5})
+        db.set_day_off("2026-09-05", False)
+        self.assertEqual(db.get_day_off_days(2026, 9), set())
+        self.assertEqual(db.get_day_off_days(2026, 10), {5})
+
+
 if __name__ == "__main__":
     unittest.main()
