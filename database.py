@@ -596,6 +596,21 @@ def delete_day_data(date: str) -> dict:
         }
 
 
+def delete_day_all(date: str) -> dict:
+    """整天清掉：支出、備忘、待審核，加上輸入頁存的原始／整理文字與「閱」章
+
+    Returns:
+        {"expenses": int, "memos": int, "pending": int, "saved_input": int}
+    """
+    counts = delete_day_data(date)
+    with db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM day_inputs WHERE date = ?", (date,))
+        counts["saved_input"] = cursor.rowcount
+        conn.commit()
+    return counts
+
+
 # ========== Pending Review 操作 ==========
 
 

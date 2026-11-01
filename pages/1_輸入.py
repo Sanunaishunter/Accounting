@@ -8,8 +8,8 @@ import database as db
 from dayinput import find_raw, raw_input_days
 from normalizer import DEFAULT_CATEGORIES, normalize_day
 from parser import ParseStatus, parse_accounting_text
-from ui import (apply_theme, cn_date, cn_int, cn_year, diff_marks, edict_end, edict_head, edict_idle, is_mobile,
-                pane_label, pill, stamp)
+from ui import (MONTH_NAMES, apply_theme, cn_date, cn_int, diff_marks, edict_end, edict_head, edict_idle, ganzhi_year,
+                is_mobile, pane_label, pill, stamp)
 
 
 st.set_page_config(page_title="輸入記帳", page_icon="📝", layout="wide")
@@ -122,19 +122,43 @@ def save_day(date_str: str, raw: str, magic: str, reviewed: bool | None = None) 
 # ========== 頂端功能列：年月、動作按鈕 ==========
 
 now = datetime.now()
+YEARS = list(range(now.year - 2, now.year + 2))
+st.session_state.setdefault("ym_year", now.year)
+st.session_state.setdefault("ym_month", now.month)
+
+
+def pick_year(y: int) -> None:
+    st.session_state.ym_year = y
+
+
+def pick_month(m: int) -> None:
+    st.session_state.ym_month = m
+
+
 if MOBILE:
-    tb_year, tb_month, _ = st.container(key="ymbar").columns(3, vertical_alignment="bottom")
+    ym_host = st.container(key="ymbar")
     toolbar = None
 else:
     toolbar = st.container(horizontal=True, vertical_alignment="bottom", key="toolbar")
-    tb_year = tb_month = toolbar
+    ym_host = toolbar
 
-with tb_year:
-    year = st.selectbox("年份", options=list(range(now.year - 2, now.year + 2)), index=2, key="select_year",
-                        width="stretch" if MOBILE else 110)
-with tb_month:
-    month = st.selectbox("月份", options=list(range(1, 13)), index=now.month - 1, key="select_month",
-                         width="stretch" if MOBILE else 90)
+with ym_host:
+    # 年份（農曆干支）一排；月份雅稱上下兩排、六個一排，放在年份旁邊
+    with st.container(key="ympick", horizontal=not MOBILE, vertical_alignment="center"):
+        with st.container(key="ym_year", horizontal=True):
+            for y in YEARS:
+                st.button(ganzhi_year(y), key=f"ym_y_{y}", on_click=pick_year, args=(y,),
+                          type="primary" if y == st.session_state.ym_year else "secondary",
+                          width="stretch" if MOBILE else "content")
+        with st.container(key="ym_months"):
+            for r in range(2):
+                with st.container(horizontal=True, key=f"ym_row{r}"):
+                    for m in range(r * 6 + 1, r * 6 + 7):
+                        st.button(MONTH_NAMES[m - 1], key=f"ym_m_{m}", on_click=pick_month, args=(m,),
+                                  help=f"{cn_int(m)}月", width="stretch" if MOBILE else "content",
+                                  type="primary" if m == st.session_state.ym_month else "secondary")
+
+year, month = st.session_state.ym_year, st.session_state.ym_month
 
 if st.session_state.selected_ym != (year, month):  # 換月份就不再停在上個月的某一天
     st.session_state.selected_ym = (year, month)
@@ -159,7 +183,7 @@ waiting_days = sorted(set(raw_input_days(year, month)) - reviewed_days)  # 有�
 with cal_area:
     with st.container(key="calwrap"):
         waiting_note = f"・待批閱 {len(waiting_days)} 天" if waiting_days else ""
-        st.html(f'<div class="cal-month">{cn_year(year)}　{cn_int(month) + '月'}'
+        st.html(f'<div class="cal-month">{ganzhi_year(year)}　{cn_int(month) + '月'}'
                 f'<small>已入帳 {len(dates_with_data)} 天{waiting_note}</small></div>')
         with st.container(key="calendar"):
             header_cols = st.columns(7)
@@ -297,6 +321,7 @@ with main_area, st.container(key="scroll"):
         # 預覽解析結果（儲存後會寫進資料庫的樣子）
         existing_expenses = db.get_expenses_by_date(date_str)
         existing_memos = db.get_memos_by_date(date_str)
+        pending_here = [r for r in db.get_all_pending_reviews() if r["date"] == date_str]
         if to_save.strip():
             preview = parse_accounting_text(to_save, target_date=date_str)
             # 這天已入帳的項目會被解析成「重複」，但儲存會取代舊資料，所以一起列出
@@ -323,6 +348,22 @@ with main_area, st.container(key="scroll"):
                     st.text(f"• {exp['category']} | {exp['person']} | ${exp['amount']} × {exp['quantity']}")
                 for memo in existing_memos:
                     st.text(f"• 📝 {memo['content']}")
+        if existing_expenses or existing_memos or pending_here or saved:
+            with st.popover("🗑️ 刪除這天", help="清掉這天已入帳的資料與存檔的校對內容"):
+                st.warning(
+                    f"將刪除 {header} 的 {len(existing_expenses)} 筆支出、{len(existing_memos)} 筆備忘、"
+                    f"{len(pending_here)} 筆待審核，以及已存的原始／整理文字與「閱」章。"
+                    "手機傳來的原始資料與 History 檔不會動。"
+                )
+                if st.button("確定刪除", type="primary", key=f"del_day_{date_str}"):
+                    try:
+                        db.delete_day_all(date_str)
+                    except Exception as e:
+                        st.error(f"刪除失敗：{e}")
+                    else:
+                        forget_day(date_str)
+                        st.toast(f"{header} 已刪除", icon="🗑️")
+                        st.rerun()
         st.html(edict_end(year, month, day, reviewed))
 
         # ===== 動作 =====
