@@ -81,9 +81,16 @@ def load_day(date_str: str, year: int, month: int, day: int, header: str) -> Non
     st.session_state[f"reviewed_{date_str}"] = bool(saved and saved["reviewed"])
 
 
+def edited_since_saved(date_str: str) -> bool:
+    """這天的兩邊文字，跟上次儲存的內容不一樣嗎（沒存過也算改過）"""
+    saved = db.get_day_input(date_str)
+    return (not saved or saved["raw_text"] != st.session_state.get(f"raw_{date_str}", "")
+            or saved["magic_text"] != st.session_state.get(f"magic_{date_str}", ""))
+
+
 def toggle_review(date_str: str, header: str) -> None:
-    """「閱」章 callback：沒蓋就儲存並蓋章；已經蓋了就收回章（資料不動）"""
-    if st.session_state[f"reviewed_{date_str}"]:
+    """「閱」章 callback：沒蓋就儲存並蓋章；已蓋章但改過內容就儲存並保持蓋章；已蓋章且沒改才收回章"""
+    if st.session_state[f"reviewed_{date_str}"] and not edited_since_saved(date_str):
         db.set_day_reviewed(date_str, False)
         st.toast(f"{header} 收回閱章", icon="↩️")
     else:
@@ -92,7 +99,7 @@ def toggle_review(date_str: str, header: str) -> None:
         except Exception as e:
             st.toast(f"儲存失敗：{e}", icon="⚠️")
             return
-        st.toast(f"{header} 閱", icon="🈶")
+        st.toast(f"{header} 閱，已儲存", icon="🈶")
     forget_day(date_str)
 
 
@@ -303,7 +310,8 @@ with main_area, st.container(key="scroll"):
                 st.html(out_badge)
                 st.button("閱", key="yue_on" if reviewed else "yue_off", on_click=toggle_review,
                           args=(date_str, header), disabled=not (raw_text_now.strip() or magic_now.strip()),
-                          help="收回閱章（資料不動）" if reviewed else "校對完了：儲存並蓋上「閱」章")
+                          help=("改過內容：儲存並保持閱章" if edited_since_saved(date_str)
+                                else "收回閱章（資料不動）") if reviewed else "校對完了：儲存並蓋上「閱」章")
             magic_text = st.text_area("魔法整理後", key=f"magic_{date_str}", label_visibility="collapsed", height="content",
                                       placeholder="按「朕要你改」，整理後的文字會出現在這裡")
 
