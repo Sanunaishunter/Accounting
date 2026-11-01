@@ -4,6 +4,7 @@ import html
 import streamlit as st
 
 import database as db
+from parser import ExpenseParser
 from ui import apply_theme, empty_state, page_header, pill
 
 
@@ -15,6 +16,7 @@ page_header("待審核項目", "校對：處理無法自動辨識的人名，設
 pending_items = db.get_all_pending_reviews()
 persons = db.get_all_persons()
 person_names = [p["name"] for p in persons]
+name_parser = ExpenseParser()  # 取出人名那一段、猜是誰（別名只存人名，不存整段含金額的原文）
 
 # 人員與別名管理（原本在側邊欄）
 with st.container(horizontal=True, vertical_alignment="center", key="toolbar"):
@@ -31,6 +33,8 @@ if not pending_items:
     empty_state("✅", "沒有待審核的項目", "所有無法辨識的名稱都已處理完畢")
 else:
     for item in pending_items:
+        name_text = name_parser.clean_person_text(item["raw_text"]) or item["raw_text"].strip()
+        suggested = name_parser.suggest_person(item["raw_text"])
         with st.container(border=True):
             col1, col2 = st.columns([2, 3])
 
@@ -51,7 +55,7 @@ else:
                     selected_person = st.selectbox(
                         "選擇人員",
                         options=person_names,
-                        index=None,
+                        index=person_names.index(suggested) if suggested in person_names else None,
                         placeholder="選擇要設為別名的人員",
                         key=f"person_select_{item['id']}",
                         label_visibility="collapsed"
@@ -61,28 +65,30 @@ else:
 
                     with col_a:
                         if st.button(
-                            f"是「{selected_person}」的別名" if selected_person else "設為某人的別名",
+                            f"「{name_text}」是「{selected_person}」的別名" if selected_person else "設為某人的別名",
                             key=f"alias_{item['id']}",
                             type="primary",
                             disabled=not selected_person
                         ):
                             # 找到該人員並新增別名
-                            for p in persons:
-                                if p["name"] == selected_person:
-                                    db.add_alias_to_person(p["id"], item["raw_text"])
-                                    break
+                            # 只存人名那一段；已經是人名就不用重複加別名
+                            if name_text != selected_person:
+                                for p in persons:
+                                    if p["name"] == selected_person:
+                                        db.add_alias_to_person(p["id"], name_text)
+                                        break
 
                             # 刪除待審核項目
                             db.delete_pending_review(item["id"])
-                            st.toast(f"已將「{item['raw_text']}」加為「{selected_person}」的別名")
+                            st.toast(f"已將「{name_text}」加為「{selected_person}」的別名")
                             st.rerun()
 
                     with col_b:
                         if st.button("是新人員", key=f"new_person_{item['id']}"):
                             try:
-                                db.add_person(item["raw_text"])
+                                db.add_person(name_text)
                                 db.delete_pending_review(item["id"])
-                                st.toast(f"已新增人員：{item['raw_text']}")
+                                st.toast(f"已新增人員：{name_text}")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"新增失敗：{e}")
@@ -99,9 +105,9 @@ else:
                     with col_a:
                         if st.button("新增為人員", key=f"new_person_{item['id']}"):
                             try:
-                                db.add_person(item["raw_text"])
+                                db.add_person(name_text)
                                 db.delete_pending_review(item["id"])
-                                st.toast(f"已新增人員：{item['raw_text']}")
+                                st.toast(f"已新增人員：{name_text}")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"新增失敗：{e}")

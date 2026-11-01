@@ -10,6 +10,20 @@ import database as db
 from normalizer import infer_person_category
 
 
+# 異體字／常見打錯字 → 統一寫法（只用來比對，不改資料）
+_VARIANT_MAP = str.maketrans({
+    "詠": "咏",
+    "提": "緹", "題": "緹",
+    "雕": "鵰", "彫": "鵰",
+    "楨": "禎", "貞": "禎",
+})
+
+
+def _canon(text: str) -> str:
+    """把異體字、打錯字換成統一寫法，用來比對人名"""
+    return text.translate(_VARIANT_MAP)
+
+
 class MatchConfidence(Enum):
     """匹配信心度"""
     EXACT = "exact"        # 完全匹配
@@ -226,7 +240,8 @@ class ExpenseParser:
 
             expense = self._parse_single_item(item, category, default_qty, date, source_line)
 
-            if expense.status == ParseStatus.FAILED:
+            if expense.status in (ParseStatus.FAILED, ParseStatus.NEEDS_CONFIRM):
+                # 比對不到、或只是模糊猜到：都交給審核頁確認（輸入頁只會存 SUCCESS，不能默默丟掉）
                 result.pending.append({
                     "raw_text": item,
                     "source_line": source_line,
@@ -334,6 +349,12 @@ class ExpenseParser:
             if potential_name.startswith(alias):
                 return potential_name, amount
 
+        # 異體字／打錯字開頭（例如「紫題點心240」）
+        canon_text = _canon(potential_name)
+        for name in [*self.persons_cache, *self.aliases_cache]:
+            if canon_text.startswith(_canon(name)):
+                return potential_name, amount
+
         return None
 
     def _match_person(self, text: str) -> tuple[Optional[str], MatchConfidence]:
@@ -356,6 +377,11 @@ class ExpenseParser:
             if text.startswith(alias):
                 return name, MatchConfidence.PREFIX
 
+        # 3.5 異體字／打錯字：先統一寫法再比（「詠恩」→「咏恩」、「紫題點心」→「紫緹」）
+        fuzzy = self._match_variant_prefix(text)
+        if fuzzy:
+            return fuzzy, MatchConfidence.FUZZY
+
         # 4. 模糊匹配（相似度 >= 0.6）
         best_match = None
         best_ratio = 0.0
@@ -373,6 +399,52 @@ class ExpenseParser:
 
         # 5. 無法匹配
         return None, MatchConfidence.NONE
+
+
+    def clean_person_text(self, item: str) -> str:
+        """從待審項目取出「人名那一段」：去掉結尾括號備註、金額、次數、類別
+
+        例：「紫提飲料+1600（優格）」→「紫提」；「泰楨點心+70」→「泰楨」；「阿鵰*2」→「阿鵰」。
+        """
+        text = item.strip()
+        text = re.sub(r"[（(][^）)]*[）)]\s*$", "", text).strip()
+        text = re.sub(r"[+＋]\$?\d+(?:\.\d+)?$", "", text).strip()
+        text = re.sub(r"\*\d+(?:\.\d+)?$", "", text).strip()
+        text = re.sub(r"\d+(?:\.\d+)?$", "", text).strip()
+        for cat in sorted(self.category_prices, key=len, reverse=True):
+            if text.endswith(cat) and len(text) > len(cat):
+                text = text[: -len(cat)].strip()
+                break
+        return text
+
+    def suggest_person(self, item: str) -> Optional[str]:
+        """審核頁用：猜待審項目最可能是哪位人員（猜不到回傳 None）"""
+        name, confidence = self._match_person(self.clean_person_text(item))
+        return None if confidence == MatchConfidence.NONE else name
+
+    def _match_variant_prefix(self, text: str) -> Optional[str]:
+        """開頭的幾個字跟某個人名（或別名）只差異體字、或只差一個字時，回傳該人員
+
+        例：「詠恩」「紫題點心」（異體字）、「泰楨點心」（開頭錯一字）。
+        有多個不同人員都符合時視為不明確，回傳 None。
+        """
+        canon_text = _canon(text)
+        same: set[str] = set()   # 統一寫法後開頭完全相同
+        close: set[str] = set()  # 開頭只差一個字
+        names = [(n, n) for n in self.persons_cache] + list(self.aliases_cache.items())
+        for key, person in names:
+            ck = _canon(key)
+            if len(ck) < 2 or len(canon_text) < len(ck):
+                continue
+            head = canon_text[:len(ck)]
+            if head == ck:
+                same.add(person)
+            elif sum(a != b for a, b in zip(head, ck)) == 1:
+                close.add(person)
+        for group in (same, close):
+            if group:
+                return next(iter(group)) if len(group) == 1 else None
+        return None
 
 
 def parse_accounting_text(
